@@ -1,0 +1,78 @@
+# Backend sozinho, sem custo na AWS: PostgreSQL com pgvector (no lugar do RDS)
+# e ElasticMQ (no lugar do SQS). Para a plataforma inteira (frontend +
+# chatbot + backend atrás de um "ALB" local), use o compose do repositório
+# projeto-cloud-insper.
+#
+#   docker compose up -d --build     API em http://localhost:8001/api/docs
+
+name: convcommerce-backend
+
+x-aws-local: &aws-local
+  AWS_REGION: us-east-2
+  AWS_ACCESS_KEY_ID: local
+  AWS_SECRET_ACCESS_KEY: local
+  SQS_ENDPOINT: http://elasticmq:9324
+  ORDERS_QUEUE_NAME: orders-queue
+  DATABASE_URL: postgresql://convcommerce:convcommerce@postgres:5432/convcommerce
+  APP_ENV: local
+  LOG_LEVEL: INFO
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: convcommerce
+      POSTGRES_PASSWORD: convcommerce
+      POSTGRES_DB: convcommerce
+    ports: ["5433:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Banco separado para a suíte de testes.
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/10-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U convcommerce -d convcommerce"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.6.11
+    ports: ["9324:9324"]
+
+  queues:
+    build: {context: ., target: worker}
+    entrypoint: ["python", "/srv/scripts/provision_queues.py"]
+    environment: *aws-local
+    depends_on: [elasticmq]
+    restart: "no"
+
+  backend-api:
+    build: {context: ., target: api}
+    ports: ["8001:8000"]
+    environment:
+      <<: *aws-local
+      SERVICE_NAME: backend-api
+      EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-none}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+    depends_on:
+      postgres: {condition: service_healthy}
+      queues: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+  order-worker:
+    build: {context: ., target: worker}
+    environment:
+      <<: *aws-local
+      SERVICE_NAME: order-worker
+      WORKER_THREADS: "2"
+      # Local: sweeper agressivo para a demo de pedido preso não levar 5 min.
+      SWEEPER_INTERVAL_S: "60"
+      SWEEPER_PENDING_AGE_S: "60"
+      MIGRATE_ON_START: "false"
+    depends_on:
+      backend-api: {condition: service_healthy}
+    restart: unless-stopped
+
+volumes:
+  pgdata:
