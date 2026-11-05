@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import json
 from typing import Any
 
 import pytest
@@ -9,6 +11,7 @@ import pytest
 from app.adapters import embeddings
 from app.adapters.repositories import ProductRepository
 from app.application import catalog
+from app.shared.config import reset_settings_cache
 
 pytestmark = pytest.mark.db
 
@@ -55,7 +58,7 @@ class TestBuscaHibrida:
     def _seed_vectors(self, database: str) -> list[float]:
         from app.adapters import db
 
-        vec = [0.0] * 768
+        vec = [0.0] * 1024
         vec[0] = 1.0
         with db.transaction() as conn:
             ProductRepository().set_embedding(conn, "BK016", embeddings.to_pgvector(vec), "fake")
@@ -138,3 +141,60 @@ class TestDetalhes:
     def test_categorias(self, database: str) -> None:
         names = {c["category"] for c in catalog.categories()}
         assert {"clássico", "ficção", "fantasia", "tecnologia"} <= names
+
+
+class FakeBedrock:
+    def __init__(self, failure: Exception | None = None) -> None:
+        self.failure = failure
+        self.requests: list[dict[str, Any]] = []
+
+    def invoke_model(self, modelId: str, body: str) -> dict[str, Any]:  # noqa: N803
+        self.requests.append({"modelId": modelId, **json.loads(body)})
+        if self.failure:
+            raise self.failure
+        return {"body": io.BytesIO(json.dumps({"embedding": [1.0] + [0.0] * 1023}).encode())}
+
+
+class TestEmbeddingsBedrock:
+    @pytest.fixture(autouse=True)
+    def bedrock_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("EMBEDDINGS_PROVIDER", "bedrock")
+        monkeypatch.delenv("EMBEDDINGS_MODEL", raising=False)
+        reset_settings_cache()
+
+    def test_chama_o_titan_sem_precisar_de_chave(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        client = FakeBedrock()
+        monkeypatch.setattr(embeddings, "bedrock_client", lambda: client)
+        assert embeddings.enabled() is True
+
+        vector = embeddings.embed("um livro sobre vigilância")
+
+        assert vector is not None and len(vector) == 1024
+        assert client.requests == [{
+            "modelId": "amazon.titan-embed-text-v2:0",
+            "inputText": "um livro sobre vigilância", "dimensions": 1024, "normalize": True,
+        }]
+
+    def test_falha_do_bedrock_degrada_para_textual(
+        self, database: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client = FakeBedrock(failure=RuntimeError("fora"))
+        monkeypatch.setattr(embeddings, "bedrock_client", lambda: client)
+        assert catalog.search("orwell")["mode"] == "lexical"
+
+    def test_backfill_preenche_a_coluna_de_1024(
+        self, database: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.adapters import db
+        from app.application import admin
+
+        monkeypatch.setattr(embeddings, "bedrock_client", FakeBedrock)
+        result = admin.backfill_embeddings(3)
+        assert result == {"pending": 3, "embedded": 3}
+        with db.transaction() as conn:
+            row = conn.execute(
+                "SELECT count(*) AS total, min(vector_dims(embedding)) AS dims, "
+                "min(embedding_model) AS model FROM products WHERE embedding IS NOT NULL"
+            ).fetchone()
+        assert (row["total"], row["dims"]) == (3, 1024)
+        assert row["model"] == "amazon.titan-embed-text-v2:0"

@@ -58,16 +58,22 @@ class Settings:
         default_factory=lambda: _env("ORDERS_QUEUE_NAME", "orders-queue")
     )
 
-    # Busca semântica. "gemini" gera embeddings pela API do Google; "none"
-    # deixa só a busca textual (full-text em português), que é o fallback
-    # também quando a API de embeddings falha.
+    # Busca semântica. "bedrock" gera embeddings com o Titan v2, "gemini" pela API
+    # do Google; "none" deixa só a busca textual (full-text em português), que é
+    # o fallback também quando a API de embeddings falha.
     embeddings_provider: str = field(
         default_factory=lambda: _env("EMBEDDINGS_PROVIDER", "none")
     )
     embeddings_model: str = field(
-        default_factory=lambda: _env("EMBEDDINGS_MODEL", "gemini-embedding-001")
+        default_factory=lambda: _env(
+            "EMBEDDINGS_MODEL",
+            "amazon.titan-embed-text-v2:0"
+            if _env("EMBEDDINGS_PROVIDER", "none") == "bedrock"
+            else "gemini-embedding-001",
+        )
     )
-    embeddings_dim: int = field(default_factory=lambda: _env_int("EMBEDDINGS_DIM", 768))
+    # Tem de bater com a coluna products.embedding (migration 0003).
+    embeddings_dim: int = field(default_factory=lambda: _env_int("EMBEDDINGS_DIM", 1024))
     embeddings_timeout_s: int = field(
         default_factory=lambda: _env_int("EMBEDDINGS_TIMEOUT_S", 4)
     )

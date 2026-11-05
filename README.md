@@ -42,7 +42,7 @@ depois só muda pela API admin. A aplicação nunca lê arquivo de dados.
 
 | Tabela | Para quê |
 |---|---|
-| `products` | Livro: título, autor, categoria, chamada, **sinopse**, ano, preço, estoque, `embedding vector(768)`, `search_tsv` (full-text em português) |
+| `products` | Livro: título, autor, categoria, chamada, **sinopse**, ano, preço, estoque, `embedding vector(1024)`, `search_tsv` (full-text em português) |
 | `stock_movements` | Livro-razão do estoque: toda mudança (carga, ajuste admin, pedido) com autor. Invariante `stock = Σ delta` |
 | `quotes`, `quote_items` | Cotação com preço do servidor e desconto limitado pela política, TTL de 30 min |
 | `orders`, `order_items`, `order_history` | Pedido (`order_id = quote_id`, no máximo um por cotação) e sua linha do tempo |
@@ -56,11 +56,11 @@ As migrations são aplicadas pela própria API no start, sob `pg_advisory_lock`
 `GET /api/products?q=...` combina dois rankings com *Reciprocal Rank Fusion*:
 
 - **textual**: full-text em português, sem acento, com peso maior em título e autor e OR entre os termos (frases da conversa não zeram o resultado);
-- **semântica**: pgvector com embeddings do Gemini (`gemini-embedding-001`, 768 dimensões), que acha "um livro sobre vigilância" sem palavra em comum.
+- **semântica**: pgvector com embeddings do Titan Text v2 no Bedrock (`amazon.titan-embed-text-v2:0`, 1024 dimensões), gerados a partir de título, autor, categoria, chamada e sinopse. Acha "um livro sobre vigilância" sem palavra em comum.
 
-A busca semântica é opcional (`EMBEDDINGS_PROVIDER=gemini` + `GEMINI_API_KEY`).
-Sem chave, ou com a API fora (timeout de 4 s e circuit breaker), a busca segue
-só textual.
+A busca semântica é opcional (`EMBEDDINGS_PROVIDER=bedrock`, com `bedrock:InvokeModel`
+na task role). `python -m app.cli embed` gera os vetores que faltam. Com o Bedrock
+fora (timeout de 4 s e circuit breaker), a busca segue só textual.
 
 ## API
 
@@ -109,7 +109,7 @@ pgvector. O SQS é simulado com moto.
 ```bash
 python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # Windows
 docker compose up -d postgres
-.venv/Scripts/python -m pytest      # 84 testes
+.venv/Scripts/python -m pytest      # 87 testes
 .venv/Scripts/python -m ruff check .
 ```
 
@@ -119,7 +119,7 @@ docker compose up -d postgres
 |---|---|---|
 | `DATABASE_URL` ou `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD`/`DB_SSLMODE` | local | Host do RDS; usuário e senha vêm do segredo gerenciado pelo RDS no Secrets Manager (`secrets.valueFrom`); `DB_SSLMODE=require` |
 | `ORDERS_QUEUE_URL` | resolve por `ORDERS_QUEUE_NAME` | injetada |
-| `EMBEDDINGS_PROVIDER`, `GEMINI_API_KEY` | `none` | `gemini` + chave do Parameter Store |
+| `EMBEDDINGS_PROVIDER` | `none` | `bedrock`, com a permissão na task role |
 | `ADMIN_TOKEN` | vazio (admin desligado) | SecureString no Parameter Store |
 | `FAULTS_PARAMETER` | vazio | `/convcommerce/<env>/faults` (injeção de falhas nas demos) |
 | `MIGRATE_ON_START` | `true` | `true` na API, `false` no worker |

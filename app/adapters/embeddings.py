@@ -1,23 +1,24 @@
 """Embeddings para a busca semântica do catálogo (pgvector).
 
-O provedor é a API de embeddings do Gemini (free tier). Como o LLM, ele é uma
-dependência externa sujeita a latência, cota e falha, então:
+O provedor é o Titan Text Embeddings v2, no Bedrock, com a credencial AWS da task,
+ou a API de embeddings do Gemini. Como o LLM, ele é uma dependência externa sujeita
+a latência, cota e falha, então:
 
 * timeout curto (4 s): a busca não pode ficar refém do embedding;
 * circuit breaker: depois de 3 falhas em 60 s, fica 60 s sem tentar;
 * qualquer falha devolve `None`, e a busca segue só com o full-text.
-
-⚠ VERIFICAR (PLANO §2.3): nome do modelo e limites atuais do free tier.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import threading
 import time
 
 import httpx
 
+from app.adapters.aws import bedrock_client
 from app.shared import metrics
 from app.shared.config import settings
 from app.shared.logging import get_logger
@@ -37,6 +38,8 @@ _opened_at: float | None = None
 
 def enabled() -> bool:
     cfg = settings()
+    if cfg.embeddings_provider == "bedrock":
+        return True
     return cfg.embeddings_provider == "gemini" and bool(cfg.gemini_api_key)
 
 
@@ -72,17 +75,43 @@ def reset_breaker() -> None:
 
 
 def _normalize(vector: list[float]) -> list[float]:
-    # Com dimensão reduzida (768 de 3072) o vetor não vem normalizado, e a
-    # distância de cosseno do pgvector fica mais estável com norma 1.
+    # Com dimensão reduzida o vetor do Gemini não vem normalizado, e a distância
+    # de cosseno do pgvector fica mais estável com norma 1.
     norm = math.sqrt(sum(v * v for v in vector)) or 1.0
     return [v / norm for v in vector]
+
+
+def _gemini(text: str, task: str) -> list[float]:
+    cfg = settings()
+    response = httpx.post(
+        GEMINI_URL.format(model=cfg.embeddings_model),
+        headers={"x-goog-api-key": cfg.gemini_api_key},
+        json={
+            "content": {"parts": [{"text": text[:8000]}]},
+            "taskType": task,
+            "outputDimensionality": cfg.embeddings_dim,
+        },
+        timeout=cfg.embeddings_timeout_s,
+    )
+    response.raise_for_status()
+    return response.json()["embedding"]["values"]
+
+
+def _bedrock(text: str) -> list[float]:
+    cfg = settings()
+    response = bedrock_client().invoke_model(
+        modelId=cfg.embeddings_model,
+        body=json.dumps({"inputText": text[:8000], "dimensions": cfg.embeddings_dim,
+                         "normalize": True}),
+    )
+    return json.loads(response["body"].read())["embedding"]
 
 
 def embed(text: str, *, task: str = "RETRIEVAL_QUERY") -> list[float] | None:
     """Embedding do texto, ou None se o provedor estiver desligado ou falhar.
 
     `task` é RETRIEVAL_QUERY para a consulta do usuário e RETRIEVAL_DOCUMENT
-    para os livros do catálogo.
+    para os livros do catálogo. Só o Gemini diferencia os dois.
     """
     if not enabled() or _breaker_open() or not text.strip():
         return None
@@ -90,18 +119,8 @@ def embed(text: str, *, task: str = "RETRIEVAL_QUERY") -> list[float] | None:
     cfg = settings()
     try:
         with metrics.timed("EmbeddingLatency"):
-            response = httpx.post(
-                GEMINI_URL.format(model=cfg.embeddings_model),
-                headers={"x-goog-api-key": cfg.gemini_api_key},
-                json={
-                    "content": {"parts": [{"text": text[:8000]}]},
-                    "taskType": task,
-                    "outputDimensionality": cfg.embeddings_dim,
-                },
-                timeout=cfg.embeddings_timeout_s,
-            )
-        response.raise_for_status()
-        values = response.json()["embedding"]["values"]
+            values = _bedrock(text) if cfg.embeddings_provider == "bedrock" \
+                else _gemini(text, task)
     except Exception as exc:  # noqa: BLE001 — qualquer falha degrada para full-text
         _record_failure()
         metrics.emit("EmbeddingErrors", 1, error=type(exc).__name__)
