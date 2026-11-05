@@ -198,3 +198,16 @@ class TestEmbeddingsBedrock:
             ).fetchone()
         assert (row["total"], row["dims"]) == (3, 1024)
         assert row["model"] == "amazon.titan-embed-text-v2:0"
+
+
+def test_senha_com_caracteres_especiais_nao_quebra_a_conexao(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from psycopg.conninfo import conninfo_to_dict
+
+    from app.shared.config import settings
+
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setenv("DB_PASSWORD", "a'b\\c d=e")
+    reset_settings_cache()
+    assert conninfo_to_dict(settings().conninfo())["password"] == "a'b\\c d=e"

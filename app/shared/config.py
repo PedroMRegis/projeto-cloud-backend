@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 
+from psycopg.conninfo import make_conninfo
+
 
 def _env(name: str, default: str) -> str:
     return os.environ.get(name, default)
@@ -107,11 +109,12 @@ class Settings:
     def conninfo(self) -> str:
         if self.database_url:
             return self.database_url
-        return (
-            f"host={self.db_host} port={self.db_port} dbname={self.db_name} "
-            f"user={self.db_user} password={self.db_password} "
-            f"sslmode={self.db_sslmode} connect_timeout=5 "
-            f"application_name={self.service_name}"
+        # make_conninfo escapa os valores: a senha gerada pelo RDS pode ter aspas,
+        # barra invertida ou outros caracteres que quebrariam a string.
+        return make_conninfo(
+            host=self.db_host, port=self.db_port, dbname=self.db_name, user=self.db_user,
+            password=self.db_password, sslmode=self.db_sslmode, connect_timeout=5,
+            application_name=self.service_name,
         )
 
 

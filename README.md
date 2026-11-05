@@ -109,7 +109,7 @@ pgvector. O SQS é simulado com moto.
 ```bash
 python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt   # Windows
 docker compose up -d postgres
-.venv/Scripts/python -m pytest      # 87 testes
+.venv/Scripts/python -m pytest      # 88 testes
 .venv/Scripts/python -m ruff check .
 ```
 
