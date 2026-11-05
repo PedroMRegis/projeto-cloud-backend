@@ -18,6 +18,7 @@ from psycopg.types.json import Jsonb
 
 from app.domain.order import OrderStatus
 from app.domain.pricing import Quote
+from app.shared.config import settings
 
 Conn = psycopg.Connection[dict[str, Any]]
 
@@ -27,8 +28,6 @@ PRODUCT_COLUMNS = (
     "created_at, updated_at"
 )
 
-# Busca semântica abaixo disso é ruído. ⚠ Calibrar com o catálogo real.
-SEMANTIC_MIN_SIMILARITY = 0.55
 
 
 def plain(value: Any) -> Any:
@@ -150,7 +149,8 @@ class ProductRepository:
             """,
             {"v": vector_literal, "category": category, "limit": limit},
         ).fetchall()
-        return [plain(r) for r in rows if float(r["similarity"]) >= SEMANTIC_MIN_SIMILARITY]
+        minimum = settings().semantic_min_similarity
+        return [plain(r) for r in rows if float(r["similarity"]) >= minimum]
 
     def categories(self, conn: Conn) -> list[dict[str, Any]]:
         rows = conn.execute(

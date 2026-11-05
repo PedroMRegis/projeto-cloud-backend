@@ -18,6 +18,11 @@ def _env_int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    return float(raw) if raw else default
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.environ.get(name)
     if raw is None or raw == "":
@@ -78,6 +83,11 @@ class Settings:
     embeddings_dim: int = field(default_factory=lambda: _env_int("EMBEDDINGS_DIM", 1024))
     embeddings_timeout_s: int = field(
         default_factory=lambda: _env_int("EMBEDDINGS_TIMEOUT_S", 4)
+    )
+    # Abaixo disso é ruído. Medido no catálogo com o Titan v2: consultas boas deram
+    # 0,17 a 0,34, e consultas sem relação, 0,09 a 0,16. A escala muda com o modelo.
+    semantic_min_similarity: float = field(
+        default_factory=lambda: _env_float("SEMANTIC_MIN_SIMILARITY", 0.17)
     )
     gemini_api_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY", ""))
 

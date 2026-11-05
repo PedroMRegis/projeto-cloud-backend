@@ -211,3 +211,25 @@ def test_senha_com_caracteres_especiais_nao_quebra_a_conexao(
     monkeypatch.setenv("DB_PASSWORD", "a'b\\c d=e")
     reset_settings_cache()
     assert conninfo_to_dict(settings().conninfo())["password"] == "a'b\\c d=e"
+
+
+def test_busca_semantica_descarta_ruido(
+    database: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.adapters import db
+
+    target = [0.0] * 1024
+    target[0] = 1.0
+    with db.transaction() as conn:
+        ProductRepository().set_embedding(conn, "BK016", embeddings.to_pgvector(target), "fake")
+
+    def query(similarity: float) -> list[float]:
+        vector = [0.0] * 1024
+        vector[0], vector[1] = similarity, (1 - similarity**2) ** 0.5
+        return vector
+
+    monkeypatch.setattr(embeddings, "embed", lambda *_a, **_k: query(0.25))
+    assert ids(catalog.search("xyzzy plugh")) == ["BK016"]
+
+    monkeypatch.setattr(embeddings, "embed", lambda *_a, **_k: query(0.10))
+    assert ids(catalog.search("xyzzy plugh")) == []
