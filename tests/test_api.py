@@ -39,6 +39,8 @@ def test_detalhe_com_relacionados(api: Any) -> None:
 
 
 def test_jornada_cotacao_pedido(api: Any) -> None:
+    api.post("/api/auth/register", json={"email": "ana@cirro.test", "name": "Ana Lima",
+                                         "password": "senha-forte-123"})
     quote = api.post("/api/quotes", json={
         "conversation_id": "c1", "items": [{"product_id": "BK001", "quantity": 3}],
         "requested_discount_pct": 5,

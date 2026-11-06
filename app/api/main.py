@@ -27,7 +27,7 @@ from app.application import admin, catalog, sales
 from app.application.sales import BusinessError
 from app.domain.pricing import MAX_QTY_PER_ITEM
 from app.domain.user import AuthUser
-from app.middlewares.validate_auth_token import optional_user
+from app.middlewares.validate_auth_token import optional_user, require_user
 from app.shared import context, metrics
 from app.shared.config import settings
 from app.shared.logging import configure_logging, get_logger
@@ -190,7 +190,6 @@ class QuoteIn(BaseModel):
 class OrderIn(BaseModel):
     quote_id: str = Field(min_length=1, max_length=64)
     conversation_id: str = Field(min_length=1, max_length=64)
-    customer_name: str = Field(min_length=1, max_length=80)
 
 
 @app.post("/api/quotes", status_code=201)
@@ -210,11 +209,13 @@ def get_quote(quote_id: str) -> dict[str, Any]:
 
 @app.post("/api/orders")
 def place_order(payload: OrderIn, response: Response,
-                user: AuthUser | None = Depends(optional_user)) -> dict[str, Any]:
-    """201 = pedido criado agora; 200 = a cotação já tinha gerado este pedido."""
+                user: AuthUser = Depends(require_user)) -> dict[str, Any]:
+    """Só com login, e o nome vem da conta.
+
+    201 = pedido criado agora; 200 = a cotação já tinha gerado este pedido.
+    """
     order, created = sales.place_order(payload.quote_id, payload.conversation_id,
-                                       payload.customer_name,
-                                       user.user_id if user else None)
+                                       user.name, user.user_id)
     response.status_code = 201 if created else 200
     return {**order, "created": created}
 

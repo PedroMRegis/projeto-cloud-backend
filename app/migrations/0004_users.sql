@@ -1,5 +1,5 @@
--- Contas de cliente e de administrador. Quem compra sem conta continua podendo
--- comprar: `orders.user_id` fica NULL nesses pedidos.
+-- Contas de cliente e de administrador. Pedidos novos exigem login (regra da API);
+-- `orders.user_id` é NULL só nos pedidos anteriores às contas.
 
 CREATE TABLE users (
     user_id       uuid PRIMARY KEY DEFAULT gen_random_uuid(),

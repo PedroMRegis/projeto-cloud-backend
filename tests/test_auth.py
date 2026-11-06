@@ -147,7 +147,6 @@ def test_sem_segredo_o_login_fica_desligado_e_a_loja_funciona(
         "email": "a@cirro.test", "name": "Ana", "password": PASSWORD})
     assert response.status_code == 503
     assert api.get("/api/products", params={"limit": 1}).status_code == 200
-    assert _buy(api, "visitante")
 
 
 def test_limite_de_tentativas_de_login(api: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -193,10 +192,54 @@ def test_pedido_de_conta_nao_abre_para_outra_pessoa(api: Any, sql: Any) -> None:
     assert api.get(f"/api/orders/{order_id}").status_code == 404
 
 
-def test_pedido_de_visitante_continua_funcionando(api: Any, sql: Any) -> None:
-    order_id = _buy(api, "conversa-visitante")
+def test_nome_do_pedido_vem_da_conta_e_nao_do_cliente(api: Any, sql: Any) -> None:
+    _register(api, name="Ana Lima")
+    quote = api.post("/api/quotes", json={
+        "conversation_id": "c1", "items": [{"product_id": "BK001", "quantity": 1}],
+    }).json()
+    order = api.post("/api/orders", json={
+        "quote_id": quote["quote_id"], "conversation_id": "c1", "customer_name": "Outra Pessoa"})
+    assert order.status_code == 201
+    assert sql.execute("SELECT customer_name FROM orders").fetchone()["customer_name"] == "Ana Lima"
+
+
+def test_visitante_cota_mas_nao_fecha_pedido(api: Any, sql: Any) -> None:
+    quote = api.post("/api/quotes", json={
+        "conversation_id": "conversa-visitante",
+        "items": [{"product_id": "BK001", "quantity": 1}],
+    })
+    assert quote.status_code == 201
+    order = api.post("/api/orders", json={
+        "quote_id": quote.json()["quote_id"], "conversation_id": "conversa-visitante",
+        "customer_name": "Ana Lima",
+    })
+    assert order.status_code == 401
+    assert sql.execute("SELECT count(*) AS n FROM orders").fetchone()["n"] == 0
+    assert sql.execute("SELECT count(*) AS n FROM outbox").fetchone()["n"] == 0
+
+
+def test_sessao_invalida_nao_fecha_pedido(api: Any, sql: Any) -> None:
+    quote = api.post("/api/quotes", json={
+        "conversation_id": "c1", "items": [{"product_id": "BK001", "quantity": 1}],
+    }).json()
+    forged = jwt.encode({"sub": "x", "iss": "cirro-backend", "aud": "cirro-web",
+                         "exp": 9_999_999_999}, "outro-segredo-com-mais-de-32-bytes-aqui",
+                        algorithm="HS256")
+    order = api.post("/api/orders", headers={"Authorization": f"Bearer {forged}"}, json={
+        "quote_id": quote["quote_id"], "conversation_id": "c1", "customer_name": "Ana Lima"})
+    assert order.status_code == 401
+    assert sql.execute("SELECT count(*) AS n FROM orders").fetchone()["n"] == 0
+
+
+def test_pedido_antigo_sem_conta_continua_abrindo(api: Any, sql: Any) -> None:
+    from app.application import sales
+
+    quote = api.post("/api/quotes", json={
+        "conversation_id": "antiga", "items": [{"product_id": "BK001", "quantity": 1}],
+    }).json()
+    order, _ = sales.place_order(quote["quote_id"], "antiga", "Ana Lima")
     assert sql.execute("SELECT user_id FROM orders").fetchone()["user_id"] is None
-    assert api.get(f"/api/orders/{order_id}").status_code == 200
+    assert api.get(f"/api/orders/{order['order_id']}").status_code == 200
 
 
 def test_chatbot_repassa_a_sessao_por_bearer(api: Any, sql: Any) -> None:
@@ -227,8 +270,12 @@ def test_rebaixar_administrador_vale_na_hora(api: Any, sql: Any) -> None:
 def test_gestao_ve_todos_os_pedidos_com_nome_completo(api: Any, sql: Any) -> None:
     _new_session(api, sql, "ana@cirro.test")
     from_account = _buy(api, "conversa-ana")
-    api.cookies.clear()
-    from_guest = _buy(api, "conversa-visitante")
+    from app.application import sales
+
+    old_quote = api.post("/api/quotes", json={
+        "conversation_id": "antiga", "items": [{"product_id": "BK001", "quantity": 1}],
+    }).json()
+    from_guest = sales.place_order(old_quote["quote_id"], "antiga", "Ana Lima")[0]["order_id"]
 
     _new_session(api, sql, "chefe@cirro.test", admin=True)
     body = api.get("/api/backoffice/orders").json()
