@@ -11,6 +11,7 @@ import pytest
 from app.adapters import embeddings
 from app.adapters.repositories import ProductRepository
 from app.application import catalog
+from app.domain.keywords import extract_keywords
 from app.shared.config import reset_settings_cache
 
 pytestmark = pytest.mark.db
@@ -52,6 +53,50 @@ class TestBuscaTextual:
         result = catalog.search("", limit=5)
         assert result["mode"] == "list"
         assert result["count"] == 5
+
+
+class TestPalavrasChave:
+    def test_palavras_de_ligacao_nao_contam(self) -> None:
+        assert extract_keywords("Quero um livro sobre ciúme, por favor") == ["ciume"]
+
+    def test_so_palavras_de_ligacao_ainda_busca(self) -> None:
+        assert extract_keywords("sobre") == ["sobre"]
+
+    def test_termos_nao_carregam_sintaxe_de_sql_nem_de_regex(self) -> None:
+        assert extract_keywords("dom' OR 1=1; -- (casm.*") == ["dom", "or", "casm"]
+
+    def test_limite_de_termos(self) -> None:
+        assert len(extract_keywords(" ".join(f"termo{i}" for i in range(40)))) == 12
+
+    def test_assunto_vence_palavra_solta_no_titulo(self, database: str) -> None:
+        assert ids(catalog.search("romance brasileiro sobre ciume"))[0] == "BK001"
+
+    def test_erro_de_digitacao_no_autor(self, database: str) -> None:
+        assert set(ids(catalog.search("tolkein"))) == {"BK025", "BK026"}
+
+    def test_erro_de_digitacao_no_titulo(self, database: str) -> None:
+        assert ids(catalog.search("dom casmuro"))[0] == "BK001"
+
+    def test_plural_acha_pelo_radical(self, database: str) -> None:
+        assert "BK026" in ids(catalog.search("aneis"))
+
+    def test_categoria_conta_como_palavra_chave(self, database: str) -> None:
+        result = catalog.search("fantasia", limit=50)
+        assert result["products"]
+        assert "fantasia" in {p["category"] for p in result["products"]}
+
+    def test_quem_cobre_poucos_termos_sai_do_resultado(self, database: str) -> None:
+        assert len(ids(catalog.search("romance brasileiro ciume", limit=50))) < 10
+
+    def test_sem_nenhuma_relacao_volta_vazio(self, database: str) -> None:
+        assert catalog.search("xyzzy plugh")["products"] == []
+
+    def test_entrada_maliciosa_nao_quebra_a_busca(self, database: str) -> None:
+        assert "BK001" in ids(catalog.search("casmurro'; DROP TABLE products; --"))
+        assert catalog.search("Dom Casmurro")["count"] >= 1
+
+    def test_so_pontuacao_nao_quebra(self, database: str) -> None:
+        assert catalog.search("!!! ???")["products"] == []
 
 
 class TestBuscaHibrida:

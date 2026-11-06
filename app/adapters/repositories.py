@@ -102,35 +102,78 @@ class ProductRepository:
         return int(row["n"]) if row else 0
 
     def search_lexical(
-        self, conn: Conn, query: str, *, category: str | None, limit: int
+        self, conn: Conn, terms: list[str], *, category: str | None, limit: int
     ) -> list[dict[str, Any]]:
-        """Full-text em português, sem acento, com OR entre os termos.
+        """Busca por palavra-chave, com a pontuação feita no próprio SQL.
 
-        OR (e não AND) porque o texto vem da conversa ("quero o dom casmurro"):
-        palavras que não são do livro não podem zerar o resultado. O `ts_rank`
-        com peso A em título e autor põe o livro certo no topo, e o `LIKE`
-        cobre prefixos que o stemmer não pega ("casm").
+        Cada termo vale conforme o lugar em que aparece: título ou autor (4),
+        categoria (2), resumo ou sinopse (1). O termo casa por prefixo ("casm") ou
+        pelo radical em português ("aneis" acha "Anéis"). Termo que não casa com
+        nenhum livro tenta a correção por distância de edição, com peso 2.
+
+        O ranking olha primeiro quantos termos o livro cobre, e só depois os pesos.
+        Quem cobre menos da metade do melhor resultado fica de fora: em "romance
+        brasileiro ciume", o livro que só tem "romance" é ruído.
         """
+        if not terms:
+            return []
         rows = conn.execute(
             f"""
-            WITH q AS (
-                SELECT
-                    nullif(replace(plainto_tsquery('portuguese', f_unaccent(%(q)s))::text,
-                                   '&', '|'), '')::tsquery AS tsq,
-                    '%%' || lower(f_unaccent(%(q)s)) || '%%' AS pat
+            WITH terms AS (
+                SELECT term, nullif(plainto_tsquery('portuguese', term)::text, '')::tsquery AS tsq
+                FROM unnest(%(terms)s::text[]) AS term
+            ),
+            docs AS (
+                SELECT product_id,
+                       lower(f_unaccent(title || ' ' || author)) AS head,
+                       lower(f_unaccent(category)) AS cat,
+                       lower(f_unaccent(tagline || ' ' || description)) AS body,
+                       search_tsv
+                FROM products
+                WHERE %(category)s::text IS NULL OR category = %(category)s
+            ),
+            exact AS (
+                SELECT d.product_id, t.term,
+                       CASE
+                           WHEN d.head ~ ('\\m' || t.term)
+                                OR to_tsvector('portuguese', d.head) @@ t.tsq THEN 4
+                           WHEN d.cat ~ ('\\m' || t.term) THEN 2
+                           WHEN d.body ~ ('\\m' || t.term) OR d.search_tsv @@ t.tsq THEN 1
+                           ELSE 0
+                       END AS weight
+                FROM docs d CROSS JOIN terms t
+            ),
+            unmatched AS (
+                SELECT term FROM exact GROUP BY term HAVING max(weight) = 0
+            ),
+            fuzzy AS (
+                SELECT d.product_id, u.term, 2 AS weight
+                FROM docs d CROSS JOIN unmatched u
+                WHERE length(u.term) >= 5
+                  AND EXISTS (
+                      SELECT 1 FROM regexp_split_to_table(d.head, '[^a-z0-9]+') AS word
+                      WHERE levenshtein(u.term, word)
+                            <= CASE WHEN length(u.term) >= 7 THEN 2 ELSE 1 END
+                  )
+            ),
+            hits AS (
+                SELECT * FROM exact WHERE weight > 0
+                UNION ALL
+                SELECT * FROM fuzzy
+            ),
+            ranked AS (
+                SELECT product_id, count(*) AS matched, sum(weight) AS score
+                FROM hits GROUP BY product_id
             )
-            SELECT {PRODUCT_COLUMNS},
-                   coalesce(ts_rank(search_tsv, q.tsq), 0)
-                   + CASE WHEN lower(f_unaccent(title || ' ' || author)) LIKE q.pat
-                          THEN 1 ELSE 0 END AS score
-            FROM products, q
-            WHERE (search_tsv @@ q.tsq
-                   OR lower(f_unaccent(title || ' ' || author)) LIKE q.pat)
-              AND (%(category)s::text IS NULL OR category = %(category)s)
-            ORDER BY score DESC, title
+            SELECT {PRODUCT_COLUMNS}, ranked.matched, ranked.score
+            FROM ranked JOIN products USING (product_id)
+            WHERE ranked.matched * 2 >= (SELECT max(matched) FROM ranked)
+            ORDER BY (lower(f_unaccent(title || ' ' || author)) LIKE %(phrase)s) DESC,
+                     ranked.matched DESC, ranked.score DESC, title
             LIMIT %(limit)s
             """,
-            {"q": query, "category": category, "limit": limit},
+            {"terms": terms, "category": category, "limit": limit,
+             "phrase": "%" + " ".join(terms) + "%"},
         ).fetchall()
         return plain(rows)
 

@@ -2,7 +2,8 @@
 
 A busca combina dois rankings com Reciprocal Rank Fusion (RRF):
 
-* **textual** (full-text em português + prefixo), que acerta título e autor;
+* **por palavra-chave** (SQL com pesos por campo, radical em português, prefixo e
+  correção de digitação), que acerta título, autor e assunto;
 * **semântica** (pgvector), que acerta descrições vagas como "um livro sobre
   vigilância" mesmo sem nenhuma palavra em comum com o catálogo.
 
@@ -16,6 +17,7 @@ from typing import Any
 
 from app.adapters import db, embeddings
 from app.adapters.repositories import ProductRepository
+from app.domain.keywords import extract_keywords
 from app.shared import metrics
 
 RRF_K = 60
@@ -73,7 +75,8 @@ def search(
     vector = embeddings.embed(query, task="RETRIEVAL_QUERY")
 
     with db.transaction() as conn:
-        lexical = _products.search_lexical(conn, query, category=category, limit=limit)
+        lexical = _products.search_lexical(conn, extract_keywords(query),
+                                           category=category, limit=limit)
         semantic = (
             _products.search_semantic(
                 conn, embeddings.to_pgvector(vector), category=category, limit=limit
