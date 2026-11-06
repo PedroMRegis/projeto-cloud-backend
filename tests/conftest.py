@@ -29,7 +29,10 @@ TEST_DATABASE_URL = os.environ.get(
     "postgresql://convcommerce:convcommerce@localhost:5433/convcommerce_test",
 )
 
-TABLES = "outbox, order_history, order_items, orders, quote_items, quotes, stock_movements, products"
+TABLES = (
+    "outbox, order_history, order_items, orders, quote_items, quotes, "
+    "stock_movements, products, users"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +50,9 @@ def app_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         "EMBEDDINGS_PROVIDER": "none",
         "GEMINI_API_KEY": "",
         "ADMIN_TOKEN": "test-admin",
+        "AUTH_JWT_SECRET": "segredo-de-teste-com-mais-de-trinta-e-dois-bytes",
+        "AUTH_COOKIE_SECURE": "false",
+        "RATE_LIMIT_DISABLED": "1",
         "ORDERS_QUEUE_NAME": "orders-queue",
         "ORDERS_QUEUE_URL": "",
         "SQS_ENDPOINT": "",

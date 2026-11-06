@@ -246,6 +246,21 @@ class ProductRepository:
 
     # --- embeddings ---
 
+    def stock_report(self, conn: Conn) -> list[dict[str, Any]]:
+        """Estoque de cada livro, com o saldo do livro-razão para conferência."""
+        rows = conn.execute(
+            """
+            SELECT p.product_id, p.title, p.author, p.category, p.price_cents, p.stock,
+                   COALESCE(sum(m.delta), 0) AS ledger_stock,
+                   COALESCE(-sum(m.delta) FILTER (WHERE m.reason = 'order'), 0) AS sold
+            FROM products p
+            LEFT JOIN stock_movements m USING (product_id)
+            GROUP BY p.product_id
+            ORDER BY p.stock, p.title
+            """
+        ).fetchall()
+        return plain(rows)
+
     def missing_embeddings(self, conn: Conn, limit: int = 100) -> list[dict[str, Any]]:
         rows = conn.execute(
             "SELECT product_id, title, author, category, tagline, description "
@@ -326,21 +341,22 @@ class OrderRepository:
         customer_name: str,
         correlation_id: str | None,
         traceparent: str | None,
+        user_id: str | None = None,
     ) -> bool:
         """Insere o pedido PENDING. False = já existia pedido para a cotação."""
         row = conn.execute(
             """
             INSERT INTO orders (order_id, conversation_id, customer_name, status,
                                 subtotal_cents, discount_pct, total_cents,
-                                correlation_id, traceparent)
-            VALUES (%s, %s, %s, 'PENDING', %s, %s, %s, %s, %s)
+                                correlation_id, traceparent, user_id)
+            VALUES (%s, %s, %s, 'PENDING', %s, %s, %s, %s, %s, %s)
             ON CONFLICT (order_id) DO NOTHING
             RETURNING order_id
             """,
             (
                 quote["quote_id"], quote["conversation_id"], customer_name,
                 quote["subtotal_cents"], quote["discount_pct"], quote["total_cents"],
-                correlation_id, traceparent,
+                correlation_id, traceparent, user_id,
             ),
         ).fetchone()
         if row is None:
@@ -398,6 +414,42 @@ class OrderRepository:
             (order_id, str(status), reason, actor),
         )
 
+    def list(
+        self, conn: Conn, *, user_id: str | None = None, status: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Pedidos mais recentes primeiro, com itens e o e-mail da conta, se houver."""
+        rows = conn.execute(
+            """
+            SELECT o.*, u.email AS account_email,
+                   COALESCE(items.items, '[]'::jsonb) AS items
+            FROM orders o
+            LEFT JOIN users u USING (user_id)
+            LEFT JOIN LATERAL (
+                SELECT jsonb_agg(jsonb_build_object(
+                           'product_id', oi.product_id, 'title', p.title, 'author', p.author,
+                           'quantity', oi.quantity, 'unit_price_cents', oi.unit_price_cents
+                       ) ORDER BY oi.product_id) AS items
+                FROM order_items oi JOIN products p USING (product_id)
+                WHERE oi.order_id = o.order_id
+            ) items ON true
+            WHERE (%(user_id)s::uuid IS NULL OR o.user_id = %(user_id)s::uuid)
+              AND (%(status)s::text IS NULL OR o.status = %(status)s::text)
+            ORDER BY o.created_at DESC, o.order_id
+            LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            {"user_id": user_id, "status": status, "limit": limit, "offset": offset},
+        ).fetchall()
+        return plain(rows)
+
+    def count_by_status(self, conn: Conn, *, user_id: str | None = None) -> dict[str, int]:
+        rows = conn.execute(
+            "SELECT status, count(*) AS total FROM orders "
+            "WHERE %(user_id)s::uuid IS NULL OR user_id = %(user_id)s::uuid GROUP BY status",
+            {"user_id": user_id},
+        ).fetchall()
+        return {row["status"]: int(row["total"]) for row in rows}
+
     def stale_pending(self, conn: Conn, older_than_s: int, limit: int = 25) -> list[dict[str, Any]]:
         rows = conn.execute(
             "SELECT order_id, correlation_id, traceparent FROM orders "
@@ -409,6 +461,40 @@ class OrderRepository:
 
 
 # ---------------------------------------------------------------------- outbox
+
+
+class UserRepository:
+    _COLUMNS = "user_id, email, name, password_hash, role, is_active"
+
+    def create(
+        self, conn: Conn, *, email: str, name: str, password_hash: str
+    ) -> dict[str, Any] | None:
+        """Cria a conta. None = o e-mail já tem cadastro."""
+        row = conn.execute(
+            f"INSERT INTO users (email, name, password_hash) VALUES (%s, %s, %s) "
+            f"ON CONFLICT (lower(email)) DO NOTHING RETURNING {self._COLUMNS}",
+            (email, name, password_hash),
+        ).fetchone()
+        return plain(row) if row else None
+
+    def by_email(self, conn: Conn, email: str) -> dict[str, Any] | None:
+        row = conn.execute(
+            f"SELECT {self._COLUMNS} FROM users WHERE lower(email) = lower(%s)", (email,)
+        ).fetchone()
+        return plain(row) if row else None
+
+    def by_id(self, conn: Conn, user_id: str) -> dict[str, Any] | None:
+        row = conn.execute(
+            f"SELECT {self._COLUMNS} FROM users WHERE user_id = %s", (user_id,)
+        ).fetchone()
+        return plain(row) if row else None
+
+    def set_role(self, conn: Conn, email: str, role: str) -> bool:
+        result = conn.execute(
+            "UPDATE users SET role = %s, updated_at = now() WHERE lower(email) = lower(%s)",
+            (role, email),
+        )
+        return result.rowcount == 1
 
 
 class OutboxRepository:

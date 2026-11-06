@@ -94,6 +94,15 @@ class Settings:
     # Rotas /api/admin/*. Sem token configurado, o admin fica desligado.
     admin_token: str = field(default_factory=lambda: _env("ADMIN_TOKEN", ""))
 
+    # Login de clientes. Sem segredo, a loja funciona sem contas. O chatbot usa o
+    # mesmo valor para validar a sessão.
+    auth_jwt_secret: str = field(default_factory=lambda: _env("AUTH_JWT_SECRET", ""))
+    auth_session_hours: int = field(default_factory=lambda: _env_int("AUTH_SESSION_HOURS", 12))
+    # Só pode ser desligado enquanto o site estiver em HTTP.
+    auth_cookie_secure: bool = field(
+        default_factory=lambda: _env("AUTH_COOKIE_SECURE", "true").lower() != "false"
+    )
+
     faults_parameter: str = field(default_factory=lambda: _env("FAULTS_PARAMETER", ""))
     quote_ttl_minutes: int = field(default_factory=lambda: _env_int("QUOTE_TTL_MINUTES", 30))
 

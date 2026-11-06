@@ -55,6 +55,8 @@ services:
       EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-none}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-}
+      AUTH_COOKIE_SECURE: "false"
     depends_on:
       postgres: {condition: service_healthy}
       queues: {condition: service_completed_successfully}

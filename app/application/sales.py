@@ -28,6 +28,7 @@ from app.adapters.repositories import (
 from app.application.catalog import brl
 from app.domain.order import OrderStatus, RejectionReason
 from app.domain.pricing import MAX_QTY_PER_ITEM, QuoteItem, build_quote
+from app.domain.user import AuthUser
 from app.shared import metrics
 from app.shared.config import settings
 from app.shared.context import correlation_id, traceparent
@@ -212,7 +213,7 @@ def _event_payload(order_id: str, corr: str | None, trace: str | None) -> dict[s
 
 
 def place_order(
-    quote_id: str, conversation_id: str, customer_name: str
+    quote_id: str, conversation_id: str, customer_name: str, user_id: str | None = None
 ) -> tuple[dict[str, Any], bool]:
     """Registra o pedido. Devolve (pedido, criado_agora)."""
     quote_id = _valid_uuid(quote_id, "quote_id")
@@ -239,7 +240,8 @@ def place_order(
             raise BusinessError("cotação expirada, crie uma nova", status=409)
 
         created = _orders.create_pending(
-            conn, quote=quote, customer_name=name, correlation_id=corr, traceparent=trace
+            conn, quote=quote, customer_name=name, correlation_id=corr, traceparent=trace,
+            user_id=user_id,
         )
         if created:
             outbox_id = _outbox.add(
@@ -280,11 +282,17 @@ def publish_now(outbox_id: int, order_id: str, corr: str | None, trace: str | No
     return True
 
 
-def get_order(order_id: str, conversation_id: str | None = None) -> dict[str, Any] | None:
+def get_order(
+    order_id: str, conversation_id: str | None = None, viewer: AuthUser | None = None
+) -> dict[str, Any] | None:
     order_id = _valid_uuid(order_id, "order_id")
     with db.transaction() as conn:
         order = _orders.get(conn, order_id)
     if not order:
+        return None
+    owner = order.get("user_id")
+    if owner and not (viewer and (viewer.is_admin or viewer.user_id == owner)):
+        # Pedido de uma conta: para os outros, é como se não existisse.
         return None
     if conversation_id and order["conversation_id"] != conversation_id:
         raise BusinessError("pedido não pertence a esta conversa", status=403)
