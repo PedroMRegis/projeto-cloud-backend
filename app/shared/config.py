@@ -6,6 +6,8 @@ import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 
+from psycopg.conninfo import make_conninfo
+
 
 def _env(name: str, default: str) -> str:
     return os.environ.get(name, default)
@@ -14,6 +16,11 @@ def _env(name: str, default: str) -> str:
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
     return int(raw) if raw else default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    return float(raw) if raw else default
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -58,23 +65,43 @@ class Settings:
         default_factory=lambda: _env("ORDERS_QUEUE_NAME", "orders-queue")
     )
 
-    # Busca semântica. "gemini" gera embeddings pela API do Google; "none"
-    # deixa só a busca textual (full-text em português), que é o fallback
-    # também quando a API de embeddings falha.
+    # Busca semântica. "bedrock" gera embeddings com o Titan v2, "gemini" pela API
+    # do Google; "none" deixa só a busca textual (full-text em português), que é
+    # o fallback também quando a API de embeddings falha.
     embeddings_provider: str = field(
         default_factory=lambda: _env("EMBEDDINGS_PROVIDER", "none")
     )
     embeddings_model: str = field(
-        default_factory=lambda: _env("EMBEDDINGS_MODEL", "gemini-embedding-001")
+        default_factory=lambda: _env(
+            "EMBEDDINGS_MODEL",
+            "amazon.titan-embed-text-v2:0"
+            if _env("EMBEDDINGS_PROVIDER", "none") == "bedrock"
+            else "gemini-embedding-001",
+        )
     )
-    embeddings_dim: int = field(default_factory=lambda: _env_int("EMBEDDINGS_DIM", 768))
+    # Tem de bater com a coluna products.embedding (migration 0003).
+    embeddings_dim: int = field(default_factory=lambda: _env_int("EMBEDDINGS_DIM", 1024))
     embeddings_timeout_s: int = field(
         default_factory=lambda: _env_int("EMBEDDINGS_TIMEOUT_S", 4)
+    )
+    # Abaixo disso é ruído. Medido no catálogo com o Titan v2: consultas boas deram
+    # 0,17 a 0,34, e consultas sem relação, 0,09 a 0,16. A escala muda com o modelo.
+    semantic_min_similarity: float = field(
+        default_factory=lambda: _env_float("SEMANTIC_MIN_SIMILARITY", 0.17)
     )
     gemini_api_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY", ""))
 
     # Rotas /api/admin/*. Sem token configurado, o admin fica desligado.
     admin_token: str = field(default_factory=lambda: _env("ADMIN_TOKEN", ""))
+
+    # Login de clientes. Sem segredo, a loja funciona sem contas. O chatbot usa o
+    # mesmo valor para validar a sessão.
+    auth_jwt_secret: str = field(default_factory=lambda: _env("AUTH_JWT_SECRET", ""))
+    auth_session_hours: int = field(default_factory=lambda: _env_int("AUTH_SESSION_HOURS", 12))
+    # Só pode ser desligado enquanto o site estiver em HTTP.
+    auth_cookie_secure: bool = field(
+        default_factory=lambda: _env("AUTH_COOKIE_SECURE", "true").lower() != "false"
+    )
 
     faults_parameter: str = field(default_factory=lambda: _env("FAULTS_PARAMETER", ""))
     quote_ttl_minutes: int = field(default_factory=lambda: _env_int("QUOTE_TTL_MINUTES", 30))
@@ -101,11 +128,12 @@ class Settings:
     def conninfo(self) -> str:
         if self.database_url:
             return self.database_url
-        return (
-            f"host={self.db_host} port={self.db_port} dbname={self.db_name} "
-            f"user={self.db_user} password={self.db_password} "
-            f"sslmode={self.db_sslmode} connect_timeout=5 "
-            f"application_name={self.service_name}"
+        # make_conninfo escapa os valores: a senha gerada pelo RDS pode ter aspas,
+        # barra invertida ou outros caracteres que quebrariam a string.
+        return make_conninfo(
+            host=self.db_host, port=self.db_port, dbname=self.db_name, user=self.db_user,
+            password=self.db_password, sslmode=self.db_sslmode, connect_timeout=5,
+            application_name=self.service_name,
         )
 
 

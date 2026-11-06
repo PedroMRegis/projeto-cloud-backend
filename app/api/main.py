@@ -17,17 +17,23 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.adapters import db
+from app.adapters.tokens import AuthDisabled
 from app.application import admin, catalog, sales
 from app.application.sales import BusinessError
 from app.domain.pricing import MAX_QTY_PER_ITEM
+from app.domain.user import AuthUser
+from app.middlewares.validate_auth_token import optional_user
 from app.shared import context, metrics
 from app.shared.config import settings
 from app.shared.logging import configure_logging, get_logger
+from app.use_cases.auth.index import router as auth_router
+from app.use_cases.backoffice.index import router as backoffice_router
+from app.use_cases.customer.index import router as customer_router
 
 configure_logging()
 log = get_logger(__name__)
@@ -92,6 +98,16 @@ async def correlation_middleware(request: Request, call_next: Any) -> Response:
 @app.exception_handler(BusinessError)
 async def business_error(_: Request, exc: BusinessError) -> JSONResponse:
     return JSONResponse({"detail": str(exc)}, status_code=exc.status)
+
+
+@app.exception_handler(AuthDisabled)
+async def auth_disabled(_: Request, __: AuthDisabled) -> JSONResponse:
+    return JSONResponse({"detail": "login indisponível neste ambiente"}, status_code=503)
+
+
+app.include_router(auth_router)
+app.include_router(customer_router)
+app.include_router(backoffice_router)
 
 
 # ------------------------------------------------------------- health checks
@@ -193,17 +209,20 @@ def get_quote(quote_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/orders")
-def place_order(payload: OrderIn, response: Response) -> dict[str, Any]:
+def place_order(payload: OrderIn, response: Response,
+                user: AuthUser | None = Depends(optional_user)) -> dict[str, Any]:
     """201 = pedido criado agora; 200 = a cotação já tinha gerado este pedido."""
     order, created = sales.place_order(payload.quote_id, payload.conversation_id,
-                                       payload.customer_name)
+                                       payload.customer_name,
+                                       user.user_id if user else None)
     response.status_code = 201 if created else 200
     return {**order, "created": created}
 
 
 @app.get("/api/orders/{order_id}")
-def get_order(order_id: str, conversation_id: str | None = None) -> dict[str, Any]:
-    order = sales.get_order(order_id, conversation_id)
+def get_order(order_id: str, conversation_id: str | None = None,
+              user: AuthUser | None = Depends(optional_user)) -> dict[str, Any]:
+    order = sales.get_order(order_id, conversation_id, user)
     if not order:
         raise HTTPException(status_code=404, detail="pedido não encontrado")
     return order

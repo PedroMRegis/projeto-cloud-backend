@@ -48,6 +48,19 @@ def ssm_client() -> Any:
     return boto3.client("ssm", region_name=settings().region, config=_BOTO_CONFIG)
 
 
+@lru_cache(maxsize=1)
+def bedrock_client() -> Any:
+    """Sem retry: a busca prefere cair para o full-text a esperar o embedding."""
+    cfg = settings()
+    config = Config(
+        retries={"total_max_attempts": 1, "mode": "standard"},
+        connect_timeout=2,
+        read_timeout=cfg.embeddings_timeout_s,
+        user_agent_extra="convcommerce",
+    )
+    return boto3.client("bedrock-runtime", region_name=cfg.region, config=config)
+
+
 def reset_clients() -> None:
-    for factory in (sqs_client, ssm_client):
+    for factory in (sqs_client, ssm_client, bedrock_client):
         factory.cache_clear()
