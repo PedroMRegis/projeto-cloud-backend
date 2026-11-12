@@ -47,6 +47,10 @@ class Settings:
     db_name: str = field(default_factory=lambda: _env("DB_NAME", "convcommerce"))
     db_user: str = field(default_factory=lambda: _env("DB_USER", "convcommerce"))
     db_password: str = field(default_factory=lambda: _env("DB_PASSWORD", ""))
+    # ARN do mesmo segredo. O RDS troca a senha a cada 7 dias, e o DB_PASSWORD
+    # injetado pelo ECS fica velho até a task subir de novo. Com o ARN, o pool
+    # relê a senha quando o Postgres recusa a autenticação (db_credentials.py).
+    db_secret_arn: str = field(default_factory=lambda: _env("DB_SECRET_ARN", ""))
     # No RDS a conexão exige TLS. Em local o Postgres do compose não tem TLS.
     db_sslmode: str = field(default_factory=lambda: _env("DB_SSLMODE", "prefer"))
     db_pool_min: int = field(default_factory=lambda: _env_int("DB_POOL_MIN", 1))

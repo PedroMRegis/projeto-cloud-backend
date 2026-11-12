@@ -61,6 +61,11 @@ def bedrock_client() -> Any:
     return boto3.client("bedrock-runtime", region_name=cfg.region, config=config)
 
 
+@lru_cache(maxsize=1)
+def secretsmanager_client() -> Any:
+    return boto3.client("secretsmanager", region_name=settings().region, config=_BOTO_CONFIG)
+
+
 def reset_clients() -> None:
-    for factory in (sqs_client, ssm_client, bedrock_client):
+    for factory in (sqs_client, ssm_client, bedrock_client, secretsmanager_client):
         factory.cache_clear()

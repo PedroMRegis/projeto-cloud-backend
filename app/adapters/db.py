@@ -21,6 +21,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+from app.adapters.db_credentials import RefreshingConnection
 from app.shared import faults
 from app.shared.config import settings
 from app.shared.logging import get_logger
@@ -46,6 +47,8 @@ def pool() -> ConnectionPool:
                 min_size=cfg.db_pool_min,
                 max_size=cfg.db_pool_max,
                 kwargs={"row_factory": dict_row, "autocommit": False},
+                # Relê a senha do Secrets Manager depois da rotação do RDS.
+                connection_class=RefreshingConnection,
                 # Não bloquear o start da task se o banco ainda não respondeu:
                 # o /health continua verde e o /ready mostra o problema.
                 open=False,
@@ -84,7 +87,7 @@ def _migration_files() -> list[Path]:
 def migrate(conninfo: str | None = None) -> list[str]:
     """Aplica as migrations pendentes. Devolve as versões aplicadas agora."""
     applied_now: list[str] = []
-    with psycopg.connect(conninfo or settings().conninfo(), autocommit=True) as conn:
+    with RefreshingConnection.connect(conninfo or settings().conninfo(), autocommit=True) as conn:
         conn.execute("SELECT pg_advisory_lock(%s)", (MIGRATION_LOCK_KEY,))
         try:
             conn.execute(
