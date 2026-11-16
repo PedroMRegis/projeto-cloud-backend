@@ -44,8 +44,11 @@ def create_queues(sqs: Any) -> dict[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--region", default=os.environ.get("AWS_REGION", "us-east-2"))
+    # Sem região padrão: vem de --region ou de AWS_REGION (o compose define).
+    parser.add_argument("--region", default=os.environ.get("AWS_REGION"))
     args = parser.parse_args()
+    if not args.region:
+        parser.error("informe --region ou defina AWS_REGION")
 
     kwargs: dict[str, Any] = {"region_name": args.region}
     if os.environ.get("SQS_ENDPOINT"):
