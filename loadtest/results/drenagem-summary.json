@@ -1,0 +1,198 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+            "chat respondeu 200": {
+                "name": "chat respondeu 200",
+                "path": "::chat respondeu 200",
+                "id": "2d5588602a964c3bb84328a13ec8616f",
+                "passes": 11560,
+                "fails": 101
+            },
+            "pedido saiu de PENDING": {
+                "name": "pedido saiu de PENDING",
+                "path": "::pedido saiu de PENDING",
+                "id": "d10646bccf54d54e21f4c47f888bf5ad",
+                "passes": 2721,
+                "fails": 0
+            }
+        }
+    },
+    "metrics": {
+        "http_req_duration": {
+            "p(95)": 731.8545899999999,
+            "avg": 1080.0899470384254,
+            "min": 0,
+            "med": 312.5516,
+            "max": 864916.9655,
+            "p(90)": 539.5263500000001
+        },
+        "vus_max": {
+            "value": 30,
+            "min": 30,
+            "max": 30
+        },
+        "data_received": {
+            "count": 20890044,
+            "rate": 6344.646699712407
+        },
+        "orders_settled": {
+            "rate": 0.8264120300520889,
+            "count": 2721
+        },
+        "checks": {
+            "passes": 14281,
+            "fails": 101,
+            "thresholds": {
+                "rate>0.98": false
+            },
+            "value": 0.9929773327770824
+        },
+        "http_req_blocked": {
+            "avg": 0.4410320224719102,
+            "min": 0,
+            "med": 0,
+            "max": 212.2504,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_waiting": {
+            "min": 0,
+            "med": 309.72715,
+            "max": 864916.9655,
+            "p(90)": 536.5183900000001,
+            "p(95)": 728.7792199999999,
+            "avg": 1076.8082572409498
+        },
+        "journey_completed": {
+            "passes": 2721,
+            "fails": 101,
+            "value": 0.9642097802976612
+        },
+        "iterations": {
+            "count": 2822,
+            "rate": 0.8570873755262752
+        },
+        "http_reqs": {
+            "count": 14418,
+            "rate": 4.378981495513053
+        },
+        "vus": {
+            "value": 0,
+            "min": 0,
+            "max": 30
+        },
+        "http_req_receiving": {
+            "min": 0,
+            "med": 1.4673500000000002,
+            "max": 660.1854,
+            "p(90)": 9.168030000000002,
+            "p(95)": 11.605615,
+            "avg": 3.24784734359828
+        },
+        "login_required_unexpected": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "http_req_connecting": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0.4299736856706894,
+            "min": 0,
+            "med": 0,
+            "max": 206.4164
+        },
+        "http_req_failed": {
+            "passes": 128,
+            "fails": 14290,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0.00887779164932723
+        },
+        "chat_turn_duration": {
+            "max": 864916.9655,
+            "p(90)": 587.2604,
+            "p(95)": 810.085,
+            "avg": 1293.3460886373389,
+            "min": 0,
+            "med": 332.9787
+        },
+        "orders_stuck_pending": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "quotes_created": {
+            "count": 4075,
+            "rate": 1.2376438891812798
+        },
+        "orders_created": {
+            "count": 2730,
+            "rate": 0.8291454766785016
+        },
+        "data_sent": {
+            "count": 8911047,
+            "rate": 2706.4301511060553
+        },
+        "order_settle_duration": {
+            "max": 3031,
+            "p(90)": 1692,
+            "p(95)": 1714,
+            "avg": 1678.0165380374863,
+            "min": 1645,
+            "med": 1669
+        },
+        "http_req_sending": {
+            "p(95)": 0,
+            "avg": 0.033842453877098076,
+            "min": 0,
+            "med": 0,
+            "max": 60.3891,
+            "p(90)": 0
+        },
+        "iteration_duration": {
+            "med": 6814.0873,
+            "max": 1794443.423,
+            "p(90)": 8291.30286,
+            "p(95)": 9102.03791,
+            "avg": 26464.853631537924,
+            "min": 1001.5656
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 605.1321788593432,
+            "min": 143.0917,
+            "med": 313.08934999999997,
+            "max": 864158.2814,
+            "p(90)": 538.9377800000001,
+            "p(95)": 727.3151399999999,
+            "thresholds": {
+                "p(95)<5000": false
+            }
+        }
+    },
+    "setup_data": {
+        "cookies": [
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZjAyYzFjNi1mMWNiLTRhYzUtODA4My00YTU3ZmRiMDAzZGEiLCJpc3MiOiJjaXJyby1iYWNrZW5kIiwiYXVkIjoiY2lycm8td2ViIiwiaWF0IjoxNzk1MDg3NzIzLCJleHAiOjE3OTUxMzA5MjN9.OBhy1hiXyCkT6aKzmV7a3f0_CKjJIdP1Hw9D2UTLJV8",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjNjdjMWM5ZC1jNjA0LTQxMjEtOTBhZi01ZTM2NDFhOWJiYmUiLCJpc3MiOiJjaXJyby1iYWNrZW5kIiwiYXVkIjoiY2lycm8td2ViIiwiaWF0IjoxNzk1MDg3NzIzLCJleHAiOjE3OTUxMzA5MjN9.OX84i9KecQDkoJGCBgcNSbU6T9Y8qnzsm2UaFOIUeJk",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0NDZlNWQ0Mi04N2EwLTQ0MjctOTBmYy0zMTZmOTlmN2IyZjIiLCJpc3MiOiJjaXJyby1iYWNrZW5kIiwiYXVkIjoiY2lycm8td2ViIiwiaWF0IjoxNzk1MDg3NzI0LCJleHAiOjE3OTUxMzA5MjR9.Zl5AAXSRg2eDeUCnO9BzrtoBeAe3-2Wp1dyswhvZS6g",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmOWVmMmZhMC00MTJmLTRjNDAtOTRkMC1hN2Q1NmFjZGNmYTEiLCJpc3MiOiJjaXJyby1iYWNrZW5kIiwiYXVkIjoiY2lycm8td2ViIiwiaWF0IjoxNzk1MDg3NzI1LCJleHAiOjE3OTUxMzA5MjV9.iHHeQDOdV3zgzBnFP-wZbuvY68slLPHleWv-S2FYcrk"
+        ]
+    }
+}
