@@ -54,7 +54,7 @@ os números e o problema aberto.
 | `scripts/ohio/repor-estoque.sh` | ✅ 21 de 40 títulos repostos |
 | `scripts/ohio/97-observa-escala.sh` | ✅ CSV gerado |
 | `scripts/ohio/98-resiliencia.sh troca-task` | ✅ 2 min 40 s, sem queda |
-| `scripts/ohio/98-resiliencia.sh perde-task` | ✅ recuperou em < 30 s |
+| `scripts/ohio/98-resiliencia.sh para-task` | ✅ recuperou em < 30 s |
 | `scripts/ohio/98-resiliencia.sh drena-instancia` | ❌ **não ensaiado** |
 | `scripts/ohio/99-consistencia.sh` | ✅ 5/5 invariantes OK |
 
@@ -171,7 +171,7 @@ cliente não percebe**.
 
 ```bash
 scripts/ohio/98-resiliencia.sh troca-task backend-api     # planejada
-scripts/ohio/98-resiliencia.sh perde-task order-worker    # não planejada
+scripts/ohio/98-resiliencia.sh para-task order-worker    # não planejada
 TERMINAR=1 scripts/ohio/98-resiliencia.sh drena-instancia # infraestrutura
 ```
 

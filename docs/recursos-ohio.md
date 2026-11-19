@@ -11,10 +11,10 @@ Todos os recursos levam o prefixo `convcommerce-prod` e as tags
 | Recurso | ID | Detalhe |
 |---|---|---|
 | VPC | `vpc-06bad157abe7820ca` | 10.10.0.0/16 |
-| Subnet convcommerce-prod-public-us-east-2b | `subnet-060ef2ad77bd97088` | 10.10.1.0/24� us-east-2b |
-| Subnet convcommerce-prod-private-us-east-2b | `subnet-0ff3a1528a53a1cae` | 10.10.11.0/24� us-east-2b |
-| Subnet convcommerce-prod-private-us-east-2a | `subnet-0018a76ddb9fdfbfa` | 10.10.10.0/24� us-east-2a |
-| Subnet convcommerce-prod-public-us-east-2a | `subnet-012fd379744aba68c` | 10.10.0.0/24� us-east-2a |
+| Subnet convcommerce-prod-public-us-east-2b | `subnet-060ef2ad77bd97088` | 10.10.1.0/24· us-east-2b |
+| Subnet convcommerce-prod-private-us-east-2b | `subnet-0ff3a1528a53a1cae` | 10.10.11.0/24· us-east-2b |
+| Subnet convcommerce-prod-private-us-east-2a | `subnet-0018a76ddb9fdfbfa` | 10.10.10.0/24· us-east-2a |
+| Subnet convcommerce-prod-public-us-east-2a | `subnet-012fd379744aba68c` | 10.10.0.0/24· us-east-2a |
 | Internet Gateway | `igw-0a2412bcbe7ec830e` | rota 0.0.0.0/0 da RT pública |
 | NAT Gateway | `nat-0668bfcc8671a0945` | saída das subnets privadas (AZ-a) |
 | Route table pública | `rtb-03c7b8860b89cd951` | → IGW |
@@ -36,7 +36,7 @@ Sem porta 22 em nenhum grupo: o acesso administrativo é por SSM Session Manager
 
 | Recurso | Nome | Configuração |
 |---|---|---|
-| RDS Postgres | `convcommerce-prod` | db.t4g.micro, Postgres 16.15, privado e criptografado; Multi-AZ False; backup 1 dia(s); proteção contra exclusão False; senha no Secrets Manager com rotação de 7 dias |
+| RDS Postgres | `convcommerce-prod` | db.t4g.micro, Postgres 16.15, privado e criptografado; Multi-AZ False; backup 7 dia(s); proteção contra exclusão True; senha no Secrets Manager com rotação de 7 dias |
 | DynamoDB (on-demand) | `convcommerce-prod-conversations` | PK conversation_id, SK sk; TTL em `expires_at` só nos itens de controle |
 
 Catálogo, estoque, pedidos, contas e os vetores da busca (pgvector) ficam no Postgres.
@@ -71,7 +71,7 @@ fila: catálogo e pedidos só pela API do backend.
 |---|---|---|
 | Cluster ECS | `convcommerce-prod` | Container Insights ligado |
 | Launch Template | `convcommerce-prod-ecs` | t3.small, AMI `ami-0467722b0cf22c8f8` (via SSM), IMDSv2 hop 1, EBS gp3 cifrado |
-| Auto Scaling Group | `convcommerce-prod-ecs` | min 2 · desired 3 · max 4, 2 AZs |
+| Auto Scaling Group | `convcommerce-prod-ecs` | min 2 · desired 3 · max 6, 2 AZs |
 | Capacity Provider | `convcommerce-prod-ec2` | managed scaling (alvo 90%), termination protection e draining |
 
 ### Instâncias agora
@@ -103,7 +103,7 @@ Regras do listener público, na ordem de avaliação:
 | Serviço | Tasks | cpu / reserva / limite | Escala por |
 |---|---|---|---|
 | `backend-api` | min 2, max 8 | 256 / 256 MiB / 512 MiB | requisições por alvo + CPU |
-| `chatbot` | min 2, max 8 | 256 / 256 MiB / 512 MiB | requisições por alvo + CPU |
+| `chatbot` | min 2, max 8 | 512 / 256 MiB / 512 MiB | requisições por alvo + CPU |
 | `order-worker` | min 1, max 6 | 128 / 128 MiB / 256 MiB | `BacklogPerTask` (metric math) |
 | `frontend` | 2 fixo | 64 / 64 MiB / 128 MiB | não escala |
 

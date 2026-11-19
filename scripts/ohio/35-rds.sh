@@ -57,8 +57,8 @@ if aws rds describe-db-instances --region "$REGION" \
   echo ">> banco ${DB_INSTANCE} já existe"
 else
   # Backup de 7 dias e proteção contra exclusão não mudam a fatura (o backup é
-  # gratuito até o tamanho do banco). Em Ohio o banco foi criado com 1 dia e
-  # sem proteção; ver a pendência no documento de arquitetura.
+  # gratuito até o tamanho do banco). Em Ohio o banco nasceu com 1 dia e sem
+  # proteção, e foi ajustado em 19/11 com modify-db-instance.
   aws rds create-db-instance --region "$REGION" \
     --db-instance-identifier "$DB_INSTANCE" \
     --engine postgres --engine-version 16 \

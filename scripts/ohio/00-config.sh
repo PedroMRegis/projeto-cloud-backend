@@ -51,7 +51,7 @@ export AZ_COUNT=2
 
 export INSTANCE_TYPE="t3.small"   # 2 vCPU, 2 GiB: comporta agente + ~6 tasks
 export ASG_MIN=2                  # uma instância por AZ
-export ASG_MAX=4                  # teto de custo, ainda permite demonstrar scale-out
+export ASG_MAX=6                  # pico de ~7.200 unidades de CPU com o chatbot em 512
 export ASG_DESIRED=3
 export TARGET_CAPACITY=90         # ~10% de folga para absorver picos
 
