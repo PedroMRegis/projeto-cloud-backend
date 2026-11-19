@@ -26,7 +26,7 @@ com `--dns="ttl=5m"` no k6).
 | Prova | Resultado |
 |---|---|
 | **Troca de task** (deployment rolling do backend) | ✅ 2 min 40 s, nunca abaixo do mínimo, zero erro |
-| **Perda de task** (SIGKILL no order-worker) | ✅ serviço de volta em < 30 s, nenhuma mensagem perdida |
+| **Parada de task** (`stop-task` no order-worker) | ✅ serviço de volta em < 30 s, nenhuma mensagem perdida |
 | **Drenagem de instância** | ✅ ciclo completo: 4 tasks migraram em 1 min 48 s, instância terminada, substituta registrada em 49 s — nenhum serviço abaixo do mínimo |
 
 ## Sem perda de dados — verificado
@@ -86,10 +86,10 @@ depois" é exatamente a análise quantitativa que a rubrica A+ pede.
 
 ## Duas coisas do repositório que o grupo precisa saber
 
-1. **`docs/recursos-ohio.md` está desatualizado.** Foi gerado em 29/10, quando a
-   persistência era DynamoDB + EventBridge Pipes. Hoje é **RDS PostgreSQL com
-   outbox**, e o chatbot usa **Bedrock**. Rede, ALB, cluster, ASG e fila
-   continuam válidos; a seção "Dados" e o Pipe, não. Precisa ser regerado.
+1. **`docs/recursos-ohio.md` foi regerado em 19/11** com `99-inventario.sh`, e os
+   scripts de criação (`30-data.sh`, `35-rds.sh`, `40-iam.sh`, `60-ssm.sh`,
+   `95-services.sh`) passaram a descrever o que está no ar: RDS PostgreSQL com
+   outbox e Bedrock, sem as tabelas antigas do DynamoDB e sem o Pipe.
 2. **O backend está com o branch `migracao-dynamodb` em checkout local**, que
    divergiu e não está contido na `main`. O que roda em produção é a `main`.
    Não dêem `git pull` cego nesse repositório.
@@ -141,7 +141,7 @@ porque o serviço está genuinamente sem CPU (186 % de média no pico).
       exige revisar o `ASG_MAX` junto. É decisão de arquitetura com custo.
 - [ ] gravar os vídeos — **com 10 a 12 usuários, não 30**, enquanto a CPU do
       chatbot não for resolvida
-- [ ] regerar `docs/recursos-ohio.md`
+- [x] regerar `docs/recursos-ohio.md` (19/11)
 
 ## Um aviso sobre a máquina que gera a carga
 

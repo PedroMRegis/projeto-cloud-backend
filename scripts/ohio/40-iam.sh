@@ -5,25 +5,27 @@
 # distintas para as instâncias EC2, execução das tasks e aplicação, seguindo o
 # princípio do menor privilégio".
 #
-# São cinco papéis, com fronteiras deliberadas:
+# São seis papéis, com fronteiras deliberadas:
 #
 #   instance        — registra a instância no cluster. NÃO acessa dados.
 #   task execution  — puxa a imagem e lê os segredos ANTES do container subir.
 #                     É o ECS que a usa, não a aplicação.
-#   backend-api     — lê o catálogo, escreve cotações e cria pedidos.
-#                     NÃO consegue debitar estoque nem confirmar pedido.
-#   order-worker    — consome a fila e debita estoque. NÃO cria pedidos.
-#   chatbot         — só a tabela de conversas. Não toca em pedidos.
-#   pipe            — lê o stream de pedidos e publica na fila.
+#   backend-api     — banco (pela senha do RDS), embeddings no Bedrock e envio
+#                     à fila de pedidos.
+#   order-worker    — banco, e consome e publica a fila de pedidos.
+#   chatbot         — só a tabela de conversas e o modelo de chat no Bedrock.
+#                     Catálogo e pedidos ele alcança por HTTP, pelo backend.
+#   frontend        — só escreve log.
 #
-# A separação entre backend-api e order-worker é a que tem valor prático: uma
-# falha (ou um prompt injection) no caminho síncrono não consegue mexer em
-# estoque, porque a credencial daquele container não tem a permissão.
+# Com catálogo e pedidos no Postgres, a separação entre leitura e escrita de
+# estoque fica na aplicação, não no IAM: as duas roles usam a mesma credencial
+# do banco. O que o IAM isola é o chatbot, o serviço exposto ao texto livre do
+# cliente: um prompt injection nele não alcança o banco nem a fila.
 #
 #   source scripts/ohio/00-config.sh && scripts/ohio/40-iam.sh
 
 source "$(dirname "${BASH_SOURCE[0]}")/00-config.sh"
-require ORDERS_QUEUE_ARN ORDERS_DLQ_ARN PIPE_DLQ_ARN ORDERS_STREAM_ARN
+require ORDERS_QUEUE_ARN DB_SECRET_ARN
 
 TABLE_ARN_PREFIX="arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${TABLE_PREFIX}"
 LOGS_ARN_PREFIX="arn:aws:logs:${REGION}:${ACCOUNT_ID}:log-group:/${PROJECT}/${ENVIRONMENT}"
@@ -81,8 +83,8 @@ remember INSTANCE_PROFILE_ARN "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${INS
 # ------------------------------------------------ role de execução de tasks
 
 # Usada pelo ECS (não pela aplicação) para puxar a imagem e resolver os
-# segredos antes de o container existir. Por isso ela — e só ela — lê os
-# parâmetros de LLM.
+# segredos antes de o container existir: os parâmetros do SSM e o usuário e a
+# senha do RDS, que entram como variáveis DB_USER e DB_PASSWORD.
 EXECUTION_ROLE="${PREFIX}-task-execution"
 ensure_role "$EXECUTION_ROLE" "ecs-tasks.amazonaws.com"
 aws iam attach-role-policy --role-name "$EXECUTION_ROLE" \
@@ -96,6 +98,12 @@ put_policy "$EXECUTION_ROLE" "secrets" "$(cat <<JSON
    "Resource":["arn:aws:kms:${REGION}:${ACCOUNT_ID}:alias/aws/ssm"]},
   {"Effect":"Allow","Action":["logs:CreateLogStream","logs:PutLogEvents"],
    "Resource":["${LOGS_ARN_PREFIX}/*"]}
+]}
+JSON
+)"
+put_policy "$EXECUTION_ROLE" "rds-secret" "$(cat <<JSON
+{"Version":"2012-10-17","Statement":[
+  {"Effect":"Allow","Action":"secretsmanager:GetSecretValue","Resource":"${DB_SECRET_ARN}"}
 ]}
 JSON
 )"
@@ -116,30 +124,46 @@ common_statements() {
 JSON
 }
 
-# --- backend-api: lê catálogo, escreve cotação, CRIA pedido.
-#     Não tem UpdateItem em products nem em orders: confirmar um pedido ou
-#     debitar estoque é privilégio exclusivo do worker.
+# Releitura da senha do RDS depois da rotação de 7 dias: a aplicação chama o
+# Secrets Manager direto quando o Postgres recusa a senha antiga.
+db_secret_policy() {
+  cat <<JSON
+{"Version":"2012-10-17","Statement":[
+  {"Effect":"Allow","Action":"secretsmanager:GetSecretValue","Resource":"${DB_SECRET_ARN}"}
+]}
+JSON
+}
+
+EMBED_MODEL="amazon.titan-embed-text-v2:0"
+CHAT_PROFILE="global.anthropic.claude-haiku-5-5"
+CHAT_MODEL="anthropic.claude-haiku-5-5"
+
+# --- backend-api: banco, embeddings e envio de pedidos à fila.
 BACKEND_ROLE="${PREFIX}-backend-api"
 ensure_role "$BACKEND_ROLE" "ecs-tasks.amazonaws.com"
 put_policy "$BACKEND_ROLE" "app" "$(cat <<JSON
 {"Version":"2012-10-17","Statement":[
-$(common_statements),
-  {"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:BatchGetItem",
-    "dynamodb:Query","dynamodb:Scan","dynamodb:UpdateItem","dynamodb:PutItem"],
-   "Resource":["${TABLE_ARN_PREFIX}products","${TABLE_ARN_PREFIX}products/index/*"]},
-  {"Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:Query"],
-   "Resource":["${TABLE_ARN_PREFIX}stock_movements"]},
-  {"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem"],
-   "Resource":["${TABLE_ARN_PREFIX}quotes"]},
-  {"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:PutItem"],
-   "Resource":["${TABLE_ARN_PREFIX}orders"]}
+$(common_statements)
+]}
+JSON
+)"
+put_policy "$BACKEND_ROLE" "db-secret" "$(db_secret_policy)"
+# O nome vem da migração para o RDS (migrar-backend-rds.sh), que criou esta
+# política; mantido para o script não deixar uma cópia ao lado da original.
+put_policy "$BACKEND_ROLE" "rds-migration" "$(cat <<JSON
+{"Version":"2012-10-17","Statement":[
+  {"Sid":"PublishOrders","Effect":"Allow",
+   "Action":["sqs:SendMessage","sqs:GetQueueUrl","sqs:GetQueueAttributes"],
+   "Resource":"${ORDERS_QUEUE_ARN}"},
+  {"Sid":"Embeddings","Effect":"Allow","Action":"bedrock:InvokeModel",
+   "Resource":"arn:aws:bedrock:${REGION}::foundation-model/${EMBED_MODEL}"}
 ]}
 JSON
 )"
 remember BACKEND_ROLE_ARN "arn:aws:iam::${ACCOUNT_ID}:role/${BACKEND_ROLE}"
 
-# --- order-worker: consome a fila e executa a transação de confirmação.
-#     Não tem PutItem em orders: não consegue criar pedido, só transicionar.
+# --- order-worker: banco, e a fila de pedidos. Ele publica o outbox na fila
+#     (SendMessage) e consome as mensagens.
 WORKER_ROLE="${PREFIX}-order-worker"
 ensure_role "$WORKER_ROLE" "ecs-tasks.amazonaws.com"
 put_policy "$WORKER_ROLE" "app" "$(cat <<JSON
@@ -148,17 +172,11 @@ $(common_statements),
   {"Effect":"Allow","Action":["sqs:ReceiveMessage","sqs:DeleteMessage",
     "sqs:ChangeMessageVisibility","sqs:GetQueueUrl","sqs:GetQueueAttributes",
     "sqs:SendMessage"],
-   "Resource":["${ORDERS_QUEUE_ARN}"]},
-  {"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:UpdateItem",
-    "dynamodb:Query"],
-   "Resource":["${TABLE_ARN_PREFIX}orders","${TABLE_ARN_PREFIX}orders/index/*"]},
-  {"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:UpdateItem"],
-   "Resource":["${TABLE_ARN_PREFIX}products"]},
-  {"Effect":"Allow","Action":["dynamodb:PutItem","dynamodb:Query"],
-   "Resource":["${TABLE_ARN_PREFIX}stock_movements"]}
+   "Resource":["${ORDERS_QUEUE_ARN}"]}
 ]}
 JSON
 )"
+put_policy "$WORKER_ROLE" "db-secret" "$(db_secret_policy)"
 remember WORKER_ROLE_ARN "arn:aws:iam::${ACCOUNT_ID}:role/${WORKER_ROLE}"
 
 # --- chatbot: só conversas. O catálogo e os pedidos ele alcança por HTTP,
@@ -176,6 +194,17 @@ $(common_statements),
 ]}
 JSON
 )"
+# O Haiku 5.5 só responde pelo perfil de inferência global, que pode rotear a
+# chamada para o modelo em outras regiões: por isso o modelo vai com região *.
+put_policy "$CHATBOT_ROLE" "bedrock" "$(cat <<JSON
+{"Version":"2012-10-17","Statement":[
+  {"Effect":"Allow","Action":"bedrock:InvokeModel","Resource":[
+    "arn:aws:bedrock:${REGION}:${ACCOUNT_ID}:inference-profile/${CHAT_PROFILE}",
+    "arn:aws:bedrock:::foundation-model/${CHAT_MODEL}",
+    "arn:aws:bedrock:*::foundation-model/${CHAT_MODEL}"]}
+]}
+JSON
+)"
 remember CHATBOT_ROLE_ARN "arn:aws:iam::${ACCOUNT_ID}:role/${CHATBOT_ROLE}"
 
 # --- frontend: nginx servindo arquivos estáticos. Só precisa escrever log.
@@ -189,21 +218,5 @@ put_policy "$FRONTEND_ROLE" "app" "$(cat <<JSON
 JSON
 )"
 remember FRONTEND_ROLE_ARN "arn:aws:iam::${ACCOUNT_ID}:role/${FRONTEND_ROLE}"
-
-# ----------------------------------------------------------- role do Pipe
-
-PIPE_ROLE="${PREFIX}-pipe"
-ensure_role "$PIPE_ROLE" "pipes.amazonaws.com"
-put_policy "$PIPE_ROLE" "stream-to-queue" "$(cat <<JSON
-{"Version":"2012-10-17","Statement":[
-  {"Effect":"Allow","Action":["dynamodb:DescribeStream","dynamodb:GetRecords",
-    "dynamodb:GetShardIterator","dynamodb:ListStreams"],
-   "Resource":["${ORDERS_STREAM_ARN}"]},
-  {"Effect":"Allow","Action":["sqs:SendMessage"],
-   "Resource":["${ORDERS_QUEUE_ARN}","${PIPE_DLQ_ARN}"]}
-]}
-JSON
-)"
-remember PIPE_ROLE_ARN "arn:aws:iam::${ACCOUNT_ID}:role/${PIPE_ROLE}"
 
 echo ">> IAM pronto. As roles levam alguns segundos para propagar."

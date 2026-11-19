@@ -39,7 +39,8 @@ export REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 
 # ---------------------------------------------------------------------- rede
 
-# CIDR distinto do de São Paulo (10.20.0.0/16) para permitir peering futuro.
+# Mesma faixa usada em São Paulo pelo Terraform: as duas regiões são
+# ambientes independentes, sem peering entre elas.
 export VPC_CIDR="10.10.0.0/16"
 export PUBLIC_CIDRS=("10.10.0.0/24" "10.10.1.0/24")
 export PRIVATE_CIDRS=("10.10.10.0/24" "10.10.11.0/24")
@@ -51,16 +52,19 @@ export AZ_COUNT=2
 export INSTANCE_TYPE="t3.small"   # 2 vCPU, 2 GiB: comporta agente + ~6 tasks
 export ASG_MIN=2                  # uma instância por AZ
 export ASG_MAX=4                  # teto de custo, ainda permite demonstrar scale-out
-export ASG_DESIRED=2
+export ASG_DESIRED=3
 export TARGET_CAPACITY=90         # ~10% de folga para absorver picos
 
 # ---------------------------------------------------------------------- dados
 
+# Catálogo, estoque, pedidos e contas ficam no RDS Postgres (35-rds.sh). No
+# DynamoDB sobra só a tabela de conversas do chatbot.
 export TABLE_PREFIX="${PREFIX}-"
-export TABLES=(products stock_movements quotes orders conversations)
+export TABLES=(conversations)
+export DB_INSTANCE="${PREFIX}"
+export DB_NAME="convcommerce"
 export ORDERS_QUEUE="${PREFIX}-orders-queue"
 export ORDERS_DLQ="${PREFIX}-orders-dlq"
-export PIPE_DLQ="${PREFIX}-pipe-dlq"
 
 # ------------------------------------------------------------------- serviços
 

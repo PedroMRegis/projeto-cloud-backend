@@ -25,7 +25,7 @@ scripts/ohio/98-resiliencia.sh estado
 | Script | Para quê |
 |---|---|
 | `00-config.sh` | identidade, nomes, state file, helpers. Carregue primeiro. |
-| `10-` … `95-` | criação da infraestrutura, na ordem numérica |
+| `10-` … `95-` | criação da infraestrutura, na ordem numérica (`35-rds.sh` cria o banco) |
 | `96-autoscaling.sh` | políticas de escala de task |
 | `97-observa-escala.sh` | grava tasks, instâncias e fila em CSV |
 | `98-resiliencia.sh` | troca de task, perda de task, drenagem de instância |

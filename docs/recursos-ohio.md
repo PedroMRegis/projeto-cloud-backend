@@ -1,6 +1,6 @@
 # Recursos criados em Ohio (us-east-2) — etapa manual
 
-Gerado por `scripts/ohio/99-inventario.sh` em 2026-10-29 17:18 UTC.
+Gerado por `scripts/ohio/99-inventario.sh` em 2026-11-19 17:32 UTC.
 Conta `108791993403`, região `us-east-2`, ambiente `prod`.
 
 Todos os recursos levam o prefixo `convcommerce-prod` e as tags
@@ -32,15 +32,14 @@ Todos os recursos levam o prefixo `convcommerce-prod` e as tags
 
 Sem porta 22 em nenhum grupo: o acesso administrativo é por SSM Session Manager.
 
-## Dados (DynamoDB, on-demand)
+## Dados
 
-| Tabela | Chaves | Extras |
+| Recurso | Nome | Configuração |
 |---|---|---|
-| `convcommerce-prod-products` | PK product_id | GSI `gsi_category`, PITR |
-| `convcommerce-prod-stock_movements` | PK product_id, SK sk | livro-razão, PITR |
-| `convcommerce-prod-quotes` | PK quote_id | TTL em `ttl` |
-| `convcommerce-prod-orders` | PK order_id | Stream NEW_IMAGE, GSI esparso `gsi_pending`, PITR |
-| `convcommerce-prod-conversations` | PK conversation_id, SK sk | TTL em `expires_at` |
+| RDS Postgres | `convcommerce-prod` | db.t4g.micro, Postgres 16.15, privado e criptografado; Multi-AZ False; backup 1 dia(s); proteção contra exclusão False; senha no Secrets Manager com rotação de 7 dias |
+| DynamoDB (on-demand) | `convcommerce-prod-conversations` | PK conversation_id, SK sk; TTL em `expires_at` só nos itens de controle |
+
+Catálogo, estoque, pedidos, contas e os vetores da busca (pgvector) ficam no Postgres.
 
 ## Mensageria
 
@@ -48,8 +47,9 @@ Sem porta 22 em nenhum grupo: o acesso administrativo é por SSM Session Manager
 |---|---|---|
 | Fila | `convcommerce-prod-orders-queue` | visibility 60 s, long polling 20 s, redrive em 3 tentativas |
 | DLQ | `convcommerce-prod-orders-dlq` | retenção de 14 dias |
-| DLQ do Pipe | `convcommerce-prod-pipe-dlq` | retenção de 14 dias |
-| EventBridge Pipe | `convcommerce-prod-orders-outbox` | stream de orders → fila; filtro INSERT + PENDING |
+
+O backend grava o pedido e o evento no outbox na mesma transação; o
+`order-worker` publica o outbox na fila e consome as mensagens.
 
 ## IAM (uma role por responsabilidade)
 
@@ -57,14 +57,13 @@ Sem porta 22 em nenhum grupo: o acesso administrativo é por SSM Session Manager
 |---|---|---|
 | `convcommerce-prod-ecs-instance` | registrar a instância no cluster | ECS agent + SSM Session Manager |
 | `convcommerce-prod-task-execution` | ECS puxar imagem e resolver segredos | ECR, logs, `ssm:GetParameters` em /convcommerce/prod/* |
-| `convcommerce-prod-backend-api` | aplicação | lê catálogo, grava cotação, **cria** pedido |
-| `convcommerce-prod-order-worker` | aplicação | consome a fila, debita estoque, **confirma** pedido |
-| `convcommerce-prod-chatbot` | aplicação | só a tabela `conversations` |
+| `convcommerce-prod-backend-api` | aplicação | senha do RDS, Titan v2 no Bedrock, envio à fila |
+| `convcommerce-prod-order-worker` | aplicação | senha do RDS, consome e publica a fila |
+| `convcommerce-prod-chatbot` | aplicação | tabela `conversations` e Haiku 5.5 no Bedrock |
 | `convcommerce-prod-frontend` | aplicação | só logs |
-| `convcommerce-prod-pipe` | EventBridge Pipe | lê o stream, publica na fila |
 
-A fronteira entre `backend-api` e `order-worker` é deliberada: o caminho
-síncrono **não tem** permissão para debitar estoque nem confirmar pedido.
+O chatbot, que recebe o texto livre do cliente, não alcança o banco nem a
+fila: catálogo e pedidos só pela API do backend.
 
 ## Computação
 
@@ -72,15 +71,15 @@ síncrono **não tem** permissão para debitar estoque nem confirmar pedido.
 |---|---|---|
 | Cluster ECS | `convcommerce-prod` | Container Insights ligado |
 | Launch Template | `convcommerce-prod-ecs` | t3.small, AMI `ami-0467722b0cf22c8f8` (via SSM), IMDSv2 hop 1, EBS gp3 cifrado |
-| Auto Scaling Group | `convcommerce-prod-ecs` | min 2 · desired 2 · max 4, 2 AZs |
+| Auto Scaling Group | `convcommerce-prod-ecs` | min 2 · desired 3 · max 4, 2 AZs |
 | Capacity Provider | `convcommerce-prod-ec2` | managed scaling (alvo 90%), termination protection e draining |
 
 ### Instâncias agora
 
 ```
-i-0988824d0fae6f5fa	t3.small	us-east-2b	10.10.11.128
-i-06a168b811786ccdc	t3.small	us-east-2b	10.10.11.120
-i-088c037282eeedf92	t3.small	us-east-2a	10.10.10.99
+i-04b5aebe44f97bdff	t3.small	us-east-2b	10.10.11.87
+i-073e448de0bd6738f	t3.small	us-east-2b	10.10.11.155
+i-0117992be1b37f1b1	t3.small	us-east-2a	10.10.10.232
 ```
 
 ## Balanceamento
@@ -112,7 +111,7 @@ Regras do listener público, na ordem de avaliação:
 
 ```
 convcommerce-prod-backend-api	2	2
-convcommerce-prod-chatbot	2	2
+convcommerce-prod-chatbot	4	4
 convcommerce-prod-frontend	2	2
 convcommerce-prod-order-worker	1	1
 ```
@@ -139,12 +138,11 @@ A tag é o hash do commit que originou a imagem. Scan on push ativo.
 
 Métricas de negócio em EMF, namespace `ConvCommerce`.
 
-## Segredos (SSM Parameter Store)
+## Segredos (SSM Parameter Store e Secrets Manager)
 
 | Parâmetro | Tipo |
 |---|---|
-| `/convcommerce/prod/llm/gemini_api_key` | SecureString |
-| `/convcommerce/prod/llm/groq_api_key` | SecureString |
+| `/convcommerce/prod/auth_jwt_secret` | SecureString (assina a sessão de login) |
 | `/convcommerce/prod/admin_token` | SecureString |
 | `/convcommerce/prod/faults` | String (injeção de falhas das demos) |
 

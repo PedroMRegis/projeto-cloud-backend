@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tabelas DynamoDB, filas SQS com DLQ e o EventBridge Pipe do outbox.
+# Tabela de conversas no DynamoDB e filas SQS de pedidos, com DLQ.
 #
 # Requisitos do enunciado atendidos aqui:
 # * "conversas, catálogo, estoque e pedidos deverão utilizar um serviço
@@ -7,121 +7,45 @@
 # * "comunicação assíncrona em pelo menos uma parte relevante [...] com
 #   dead-letter queue ou mecanismo equivalente".
 #
-# O Pipe lê o stream da tabela `orders` e publica na fila: é o que garante que
-# não exista pedido sem evento, sem a aplicação precisar de uma segunda escrita.
+# Catálogo, estoque, pedidos e contas ficam no RDS Postgres (35-rds.sh). Até
+# 12/11/2026 eles moravam em quatro tabelas DynamoDB com um EventBridge Pipe;
+# a troca para o Postgres com outbox está no ADR 0002 e no migrar-backend-rds.sh.
 #
 #   source scripts/ohio/00-config.sh && scripts/ohio/30-data.sh
 
 source "$(dirname "${BASH_SOURCE[0]}")/00-config.sh"
 
-table_name() { echo "${TABLE_PREFIX}$1"; }
+# ------------------------------------------------------------ conversas
 
-table_exists() {
-  aws dynamodb describe-table --region "$REGION" --table-name "$1" >/dev/null 2>&1
-}
-
-# ------------------------------------------------------------------- tabelas
-
-# On-demand: a carga do MVP é irregular (demos e teste de carga), e capacidade
+# On-demand: a carga é irregular (demos e teste de carga), e capacidade
 # provisionada ociosa custaria mais que o consumo real.
-create_table() {
-  local logical="$1"; shift
-  local name; name="$(table_name "$logical")"
-  if table_exists "$name"; then
-    echo ">> tabela ${name} já existe"
-    return
-  fi
-  aws dynamodb create-table --region "$REGION" --table-name "$name" \
+CONVERSATIONS="${TABLE_PREFIX}conversations"
+if aws dynamodb describe-table --region "$REGION" --table-name "$CONVERSATIONS" >/dev/null 2>&1; then
+  echo ">> tabela ${CONVERSATIONS} já existe"
+else
+  aws dynamodb create-table --region "$REGION" --table-name "$CONVERSATIONS" \
     --billing-mode PAY_PER_REQUEST \
-    --tags "Key=Project,Value=${PROJECT}" "Key=Environment,Value=${ENVIRONMENT}" \
-    "$@" >/dev/null
-  echo ">> tabela ${name} criada"
-}
+    --attribute-definitions \
+      AttributeName=conversation_id,AttributeType=S \
+      AttributeName=sk,AttributeType=S \
+    --key-schema \
+      AttributeName=conversation_id,KeyType=HASH \
+      AttributeName=sk,KeyType=RANGE \
+    --tags "Key=Project,Value=${PROJECT}" "Key=Environment,Value=${ENVIRONMENT}" >/dev/null
+  aws dynamodb wait table-exists --region "$REGION" --table-name "$CONVERSATIONS"
+  echo ">> tabela ${CONVERSATIONS} criada"
+fi
 
-create_table products \
-  --attribute-definitions \
-    AttributeName=product_id,AttributeType=S \
-    AttributeName=category,AttributeType=S \
-    AttributeName=title,AttributeType=S \
-  --key-schema AttributeName=product_id,KeyType=HASH \
-  --global-secondary-indexes \
-    "[{\"IndexName\":\"gsi_category\",
-       \"KeySchema\":[{\"AttributeName\":\"category\",\"KeyType\":\"HASH\"},
-                      {\"AttributeName\":\"title\",\"KeyType\":\"RANGE\"}],
-       \"Projection\":{\"ProjectionType\":\"ALL\"}}]"
-
-create_table stock_movements \
-  --attribute-definitions \
-    AttributeName=product_id,AttributeType=S \
-    AttributeName=sk,AttributeType=S \
-  --key-schema \
-    AttributeName=product_id,KeyType=HASH \
-    AttributeName=sk,KeyType=RANGE
-
-create_table quotes \
-  --attribute-definitions AttributeName=quote_id,AttributeType=S \
-  --key-schema AttributeName=quote_id,KeyType=HASH
-
-# O stream é o que alimenta o Pipe: a gravação do pedido É o evento.
-create_table orders \
-  --attribute-definitions \
-    AttributeName=order_id,AttributeType=S \
-    AttributeName=pending_shard,AttributeType=S \
-    AttributeName=created_at,AttributeType=S \
-  --key-schema AttributeName=order_id,KeyType=HASH \
-  --stream-specification StreamEnabled=true,StreamViewType=NEW_IMAGE \
-  --global-secondary-indexes \
-    "[{\"IndexName\":\"gsi_pending\",
-       \"KeySchema\":[{\"AttributeName\":\"pending_shard\",\"KeyType\":\"HASH\"},
-                      {\"AttributeName\":\"created_at\",\"KeyType\":\"RANGE\"}],
-       \"Projection\":{\"ProjectionType\":\"INCLUDE\",
-                       \"NonKeyAttributes\":[\"correlation_id\",\"traceparent\"]}}]"
-
-create_table conversations \
-  --attribute-definitions \
-    AttributeName=conversation_id,AttributeType=S \
-    AttributeName=sk,AttributeType=S \
-  --key-schema \
-    AttributeName=conversation_id,KeyType=HASH \
-    AttributeName=sk,KeyType=RANGE
-
-for logical in "${TABLES[@]}"; do
-  aws dynamodb wait table-exists --region "$REGION" --table-name "$(table_name "$logical")"
-done
-
-# TTL: as cotações expiram em 30 min e as conversas em 7 dias. É só faxina —
-# a expiração que vale para o negócio é avaliada na leitura, porque o TTL do
-# DynamoDB pode levar horas para apagar de fato.
-enable_ttl() {
-  local name attribute
-  name="$(table_name "$1")"; attribute="$2"
-  local status
-  status="$(aws dynamodb describe-time-to-live --region "$REGION" \
-    --table-name "$name" --query 'TimeToLiveDescription.TimeToLiveStatus' --output text)"
-  if [[ "$status" == "ENABLED" || "$status" == "ENABLING" ]]; then
-    echo ">> TTL de ${name} já ativo"
-    return
-  fi
-  aws dynamodb update-time-to-live --region "$REGION" --table-name "$name" \
-    --time-to-live-specification "Enabled=true,AttributeName=${attribute}" >/dev/null
-  echo ">> TTL de ${name} ativado em ${attribute}"
-}
-
-enable_ttl quotes ttl
-enable_ttl conversations expires_at
-
-# PITR nas tabelas que guardam a transação: o enunciado exige recuperar a
-# capacidade "sem perda dos dados persistentes".
-for logical in products orders stock_movements; do
-  aws dynamodb update-continuous-backups --region "$REGION" \
-    --table-name "$(table_name "$logical")" \
-    --point-in-time-recovery-specification PointInTimeRecoveryEnabled=true \
-    >/dev/null 2>&1 || true
-done
-
-ORDERS_STREAM_ARN="$(aws dynamodb describe-table --region "$REGION" \
-  --table-name "$(table_name orders)" --query 'Table.LatestStreamArn' --output text)"
-remember ORDERS_STREAM_ARN "$ORDERS_STREAM_ARN"
+# TTL em `expires_at`: só os itens de controle (`REQ#` da idempotência de turno
+# e `RATE#` do limite de mensagens) recebem o atributo. As mensagens não têm
+# `expires_at` e ficam para sempre, ligadas à conta do cliente.
+status="$(aws dynamodb describe-time-to-live --region "$REGION" \
+  --table-name "$CONVERSATIONS" --query 'TimeToLiveDescription.TimeToLiveStatus' --output text)"
+if [[ "$status" != "ENABLED" && "$status" != "ENABLING" ]]; then
+  aws dynamodb update-time-to-live --region "$REGION" --table-name "$CONVERSATIONS" \
+    --time-to-live-specification "Enabled=true,AttributeName=expires_at" >/dev/null
+  echo ">> TTL de ${CONVERSATIONS} ativado em expires_at"
+fi
 
 # --------------------------------------------------------------------- filas
 
@@ -135,26 +59,20 @@ queue_arn() {
     --attribute-names QueueArn --query 'Attributes.QueueArn' --output text
 }
 
-# DLQs primeiro: a fila principal precisa do ARN delas no redrive.
-for dlq in "$ORDERS_DLQ" "$PIPE_DLQ"; do
-  if [[ -z "$(queue_url "$dlq")" ]]; then
-    # 14 dias de retenção: tempo de sobra para investigar uma mensagem
-    # problemática antes do redrive.
-    aws sqs create-queue --region "$REGION" --queue-name "$dlq" \
-      --attributes "MessageRetentionPeriod=1209600,SqsManagedSseEnabled=true" \
-      --tags "Project=${PROJECT},Environment=${ENVIRONMENT}" >/dev/null
-    echo ">> fila ${dlq} criada"
-  fi
-done
+# A DLQ primeiro: a fila principal precisa do ARN dela no redrive.
+if [[ -z "$(queue_url "$ORDERS_DLQ")" ]]; then
+  # 14 dias de retenção: tempo de sobra para investigar uma mensagem
+  # problemática antes do redrive.
+  aws sqs create-queue --region "$REGION" --queue-name "$ORDERS_DLQ" \
+    --attributes "MessageRetentionPeriod=1209600,SqsManagedSseEnabled=true" \
+    --tags "Project=${PROJECT},Environment=${ENVIRONMENT}" >/dev/null
+  echo ">> fila ${ORDERS_DLQ} criada"
+fi
 
 ORDERS_DLQ_URL="$(queue_url "$ORDERS_DLQ")"
 ORDERS_DLQ_ARN="$(queue_arn "$ORDERS_DLQ_URL")"
-PIPE_DLQ_URL="$(queue_url "$PIPE_DLQ")"
-PIPE_DLQ_ARN="$(queue_arn "$PIPE_DLQ_URL")"
 remember ORDERS_DLQ_URL "$ORDERS_DLQ_URL"
 remember ORDERS_DLQ_ARN "$ORDERS_DLQ_ARN"
-remember PIPE_DLQ_URL "$PIPE_DLQ_URL"
-remember PIPE_DLQ_ARN "$PIPE_DLQ_ARN"
 
 if [[ -z "$(queue_url "$ORDERS_QUEUE")" ]]; then
   # VisibilityTimeout 60 s: folga sobre o tempo de processar um pedido.
@@ -179,5 +97,5 @@ ORDERS_QUEUE_ARN="$(queue_arn "$ORDERS_QUEUE_URL")"
 remember ORDERS_QUEUE_URL "$ORDERS_QUEUE_URL"
 remember ORDERS_QUEUE_ARN "$ORDERS_QUEUE_ARN"
 
-echo ">> dados e mensageria prontos"
-echo ">> em seguida: scripts/ohio/40-iam.sh (o Pipe precisa da role)"
+echo ">> conversas e filas prontas"
+echo ">> em seguida: scripts/ohio/35-rds.sh"

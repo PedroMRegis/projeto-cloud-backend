@@ -65,7 +65,9 @@ const SCENARIO = __ENV.SCENARIO || 'rampa';
 // para não colidir com uma execução anterior que já deixou as contas criadas.
 const POOL = Number(__ENV.POOL || 4);
 const ACCOUNT_TAG = __ENV.ACCOUNT_TAG || 'k6';
-const ACCOUNT_PASSWORD = __ENV.ACCOUNT_PASSWORD || 'carga-k6-2026!';
+// Sem valor padrão: as contas de carga existem em produção, e a senha não pode
+// ficar no repositório. Passe com -e ACCOUNT_PASSWORD=...
+const ACCOUNT_PASSWORD = __ENV.ACCOUNT_PASSWORD || '';
 const COOKIE_NAME = 'cirro_session';
 
 const ordersCreated = new Counter('orders_created');
@@ -170,6 +172,10 @@ function sessionCookie(res) {
 
 export function setup() {
   randomSeed(42);
+
+  if (!ACCOUNT_PASSWORD) {
+    fail('defina a senha das contas de carga com -e ACCOUNT_PASSWORD=...');
+  }
 
   const health = http.get(`${BASE_URL}/health`, { tags: { endpoint: 'health' } });
   if (health.status !== 200) {

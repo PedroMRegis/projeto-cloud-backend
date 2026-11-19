@@ -32,10 +32,8 @@ estoque e confirma → o cliente vê o pedido sair de `PENDING`.
 
 ### Duas ressalvas sobre o repositório
 
-1. **`docs/recursos-ohio.md` está desatualizado.** Foi gerado em 2026-10-29,
-   quando a persistência era DynamoDB + EventBridge Pipes. Hoje é **RDS
-   PostgreSQL com tabela de outbox**, e o chatbot usa **Bedrock**. Rede, ALB,
-   cluster, ASG e fila continuam válidos; a seção "Dados" e o Pipe, não.
+1. **`docs/recursos-ohio.md` foi regerado em 2026-11-19** a partir da AWS e
+   descreve o que está no ar: RDS PostgreSQL com outbox e Bedrock.
 2. **`repos/projeto-cloud-backend` está no branch local `migracao-dynamodb`**,
    que divergiu e **não** está contido em `origin/main`. O que roda em produção
    é `origin/main`. Não dê `git pull` cego nesse repositório.

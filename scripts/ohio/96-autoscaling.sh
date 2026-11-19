@@ -15,7 +15,7 @@
 #   frontend      não escala             arquivo estático, carga desprezível
 #
 # O worker é o caso interessante: escalar por CPU seria errado, porque ele
-# passa a maior parte do tempo bloqueado em long polling e em I/O do DynamoDB.
+# passa a maior parte do tempo bloqueado em long polling e em I/O do Postgres.
 # A CPU ficaria baixa com a fila crescendo. A métrica certa é quantas
 # mensagens existem por task — que é construída com metric math, já que o
 # CloudWatch não a oferece pronta.

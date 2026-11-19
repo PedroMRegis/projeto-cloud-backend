@@ -73,7 +73,7 @@ print(json.dumps({"containerOverrides": [{
   # Tem de ser PYTHONUTF8, não PYTHONIOENCODING: o CLI v2 é um binário
   # congelado e só o primeiro chega ao interpretador embutido.
   PYTHONUTF8=1 aws logs get-log-events --region "$REGION" \
-    --log-group-name "/convcommerce/prod/backend-api" \
+    --log-group-name "/${PROJECT}/${ENVIRONMENT}/backend-api" \
     --log-stream-name "ecs/app/${task_arn##*/}" \
     --query 'events[].message' --output text 2>/dev/null \
     | tr '\t' '\n' \

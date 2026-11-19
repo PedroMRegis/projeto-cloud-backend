@@ -8,7 +8,7 @@
 #
 #   source scripts/ohio/00-config.sh
 #   scripts/ohio/98-resiliencia.sh troca-task
-#   scripts/ohio/98-resiliencia.sh perde-task
+#   scripts/ohio/98-resiliencia.sh para-task
 #   scripts/ohio/98-resiliencia.sh drena-instancia
 #   scripts/ohio/98-resiliencia.sh estado
 #
@@ -77,14 +77,18 @@ troca_task() {
 
 perde_task() {
   # O order-worker é o alvo certo: ele é quem tem trabalho em andamento.
+  # `ecs stop-task` manda SIGTERM e, se o container não sair em `stopTimeout`
+  # (30 s), SIGKILL. O worker pode terminar a mensagem em curso antes de sair;
+  # a prova aqui é que o serviço repõe a task e nenhum pedido fica preso. A
+  # reentrega pelo visibility timeout só aparece se a task morrer no meio.
   # Matar um backend-api só prova o balanceamento; matar o worker no meio de
   # uma mensagem prova a entrega pelo menos uma vez + idempotência.
   local servico="${1:-order-worker}"
-  marca "PERDA DE TASK — SIGKILL em uma task de ${servico}"
-  echo "O que mostrar: a mensagem que estava em voo volta para a fila depois do"
-  echo "visibility timeout (60 s) e é reprocessada por outra task. O pedido sai"
-  echo "de PENDING sem estoque debitado duas vezes — é a idempotência, não a"
-  echo "sorte, que garante isso."
+  marca "PARADA DE TASK — stop-task (SIGTERM, SIGKILL após 30 s) em ${servico}"
+  echo "O que mostrar: o ECS repõe a task e nenhum pedido fica em PENDING. Se a"
+  echo "task morrer no meio de uma mensagem, ela volta para a fila depois do"
+  echo "visibility timeout (60 s) e é reprocessada sem debitar estoque duas"
+  echo "vezes — é a idempotência, não a sorte, que garante isso."
   echo ""
 
   local task
@@ -189,12 +193,12 @@ reativa_instancia() {
 
 case "${1:-}" in
   troca-task)      troca_task "${2:-}" ;;
-  perde-task)      perde_task "${2:-}" ;;
+  para-task|perde-task) perde_task "${2:-}" ;;
   drena-instancia)   drena_instancia ;;
   reativa-instancia) reativa_instancia ;;
   estado)            estado ;;
   *)
-    echo "uso: $0 {troca-task|perde-task|drena-instancia|reativa-instancia|estado} [servico]" >&2
+    echo "uso: $0 {troca-task|para-task|drena-instancia|reativa-instancia|estado} [servico]" >&2
     echo "     TERMINAR=1 $0 drena-instancia   — drena E termina (ciclo completo)" >&2
     exit 2 ;;
 esac

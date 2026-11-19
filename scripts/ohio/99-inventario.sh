@@ -47,15 +47,18 @@ q() { aws "$@" 2>/dev/null || echo "(indisponível)"; }
   echo
   echo "Sem porta 22 em nenhum grupo: o acesso administrativo é por SSM Session Manager."
   echo
-  echo "## Dados (DynamoDB, on-demand)"
+  echo "## Dados"
   echo
-  echo '| Tabela | Chaves | Extras |'
+  echo '| Recurso | Nome | Configuração |'
   echo '|---|---|---|'
-  echo "| \`${TABLE_PREFIX}products\` | PK product_id | GSI \`gsi_category\`, PITR |"
-  echo "| \`${TABLE_PREFIX}stock_movements\` | PK product_id, SK sk | livro-razão, PITR |"
-  echo "| \`${TABLE_PREFIX}quotes\` | PK quote_id | TTL em \`ttl\` |"
-  echo "| \`${TABLE_PREFIX}orders\` | PK order_id | Stream NEW_IMAGE, GSI esparso \`gsi_pending\`, PITR |"
-  echo "| \`${TABLE_PREFIX}conversations\` | PK conversation_id, SK sk | TTL em \`expires_at\` |"
+  q rds describe-db-instances --region "$REGION" --db-instance-identifier "$DB_INSTANCE" \
+    --query 'DBInstances[0].[DBInstanceIdentifier,DBInstanceClass,EngineVersion,MultiAZ,BackupRetentionPeriod,DeletionProtection]' \
+    --output text | while read -r id cls ver maz bkp del; do
+      echo "| RDS Postgres | \`${id}\` | ${cls}, Postgres ${ver}, privado e criptografado; Multi-AZ ${maz}; backup ${bkp} dia(s); proteção contra exclusão ${del}; senha no Secrets Manager com rotação de 7 dias |"
+    done
+  echo "| DynamoDB (on-demand) | \`${TABLE_PREFIX}conversations\` | PK conversation_id, SK sk; TTL em \`expires_at\` só nos itens de controle |"
+  echo
+  echo "Catálogo, estoque, pedidos, contas e os vetores da busca (pgvector) ficam no Postgres."
   echo
   echo "## Mensageria"
   echo
@@ -63,8 +66,9 @@ q() { aws "$@" 2>/dev/null || echo "(indisponível)"; }
   echo '|---|---|---|'
   echo "| Fila | \`${ORDERS_QUEUE}\` | visibility 60 s, long polling 20 s, redrive em 3 tentativas |"
   echo "| DLQ | \`${ORDERS_DLQ}\` | retenção de 14 dias |"
-  echo "| DLQ do Pipe | \`${PIPE_DLQ}\` | retenção de 14 dias |"
-  echo "| EventBridge Pipe | \`${PIPE_NAME:-}\` | stream de orders → fila; filtro INSERT + PENDING |"
+  echo
+  echo "O backend grava o pedido e o evento no outbox na mesma transação; o"
+  echo "\`order-worker\` publica o outbox na fila e consome as mensagens."
   echo
   echo "## IAM (uma role por responsabilidade)"
   echo
@@ -72,14 +76,13 @@ q() { aws "$@" 2>/dev/null || echo "(indisponível)"; }
   echo '|---|---|---|'
   echo "| \`${PREFIX}-ecs-instance\` | registrar a instância no cluster | ECS agent + SSM Session Manager |"
   echo "| \`${PREFIX}-task-execution\` | ECS puxar imagem e resolver segredos | ECR, logs, \`ssm:GetParameters\` em ${SSM_PREFIX}/* |"
-  echo "| \`${PREFIX}-backend-api\` | aplicação | lê catálogo, grava cotação, **cria** pedido |"
-  echo "| \`${PREFIX}-order-worker\` | aplicação | consome a fila, debita estoque, **confirma** pedido |"
-  echo "| \`${PREFIX}-chatbot\` | aplicação | só a tabela \`conversations\` |"
+  echo "| \`${PREFIX}-backend-api\` | aplicação | senha do RDS, Titan v2 no Bedrock, envio à fila |"
+  echo "| \`${PREFIX}-order-worker\` | aplicação | senha do RDS, consome e publica a fila |"
+  echo "| \`${PREFIX}-chatbot\` | aplicação | tabela \`conversations\` e Haiku 5.5 no Bedrock |"
   echo "| \`${PREFIX}-frontend\` | aplicação | só logs |"
-  echo "| \`${PREFIX}-pipe\` | EventBridge Pipe | lê o stream, publica na fila |"
   echo
-  echo "A fronteira entre \`backend-api\` e \`order-worker\` é deliberada: o caminho"
-  echo "síncrono **não tem** permissão para debitar estoque nem confirmar pedido."
+  echo "O chatbot, que recebe o texto livre do cliente, não alcança o banco nem a"
+  echo "fila: catálogo e pedidos só pela API do backend."
   echo
   echo "## Computação"
   echo
@@ -153,12 +156,11 @@ q() { aws "$@" 2>/dev/null || echo "(indisponível)"; }
   echo
   echo "Métricas de negócio em EMF, namespace \`ConvCommerce\`."
   echo
-  echo "## Segredos (SSM Parameter Store)"
+  echo "## Segredos (SSM Parameter Store e Secrets Manager)"
   echo
   echo '| Parâmetro | Tipo |'
   echo '|---|---|'
-  echo "| \`${SSM_PREFIX}/llm/gemini_api_key\` | SecureString |"
-  echo "| \`${SSM_PREFIX}/llm/groq_api_key\` | SecureString |"
+  echo "| \`${SSM_PREFIX}/auth_jwt_secret\` | SecureString (assina a sessão de login) |"
   echo "| \`${SSM_PREFIX}/admin_token\` | SecureString |"
   echo "| \`${SSM_PREFIX}/faults\` | String (injeção de falhas das demos) |"
   echo

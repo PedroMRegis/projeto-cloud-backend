@@ -6,35 +6,16 @@
 # armazená-los no código, nas imagens ou nos arquivos Terraform".
 #
 # Parameter Store (e não Secrets Manager) porque o tier Standard é gratuito,
-# enquanto o Secrets Manager cobra por segredo/mês. As chaves são gravadas
-# **por este script**, a partir do ambiente local — nunca pelo Terraform, que
-# gravaria o valor no state. O Terraform só monta o ARN por nome.
+# enquanto o Secrets Manager cobra por segredo/mês. A exceção é a senha do RDS,
+# que fica no Secrets Manager porque a AWS a troca sozinha (35-rds.sh).
 #
-#   export GEMINI_API_KEY=...   # opcional
-#   export GROQ_API_KEY=...     # opcional
+# Os valores são gerados aqui, com openssl, e nunca passam pelo repositório nem
+# pela linha de comando de quem roda o script. O modelo de IA é o Bedrock, que
+# usa a role da task: não há chave de API de LLM para guardar.
+#
 #   source scripts/ohio/00-config.sh && scripts/ohio/60-ssm.sh
 
 source "$(dirname "${BASH_SOURCE[0]}")/00-config.sh"
-
-put_secure() {
-  local name="$1" value="$2"
-  if [[ -z "$value" ]]; then
-    if aws ssm get-parameter --region "$REGION" --name "$name" >/dev/null 2>&1; then
-      echo ">> ${name} já existe, preservado"
-    else
-      # O chatbot trata chave vazia como provedor indisponível e cai no modo
-      # guiado, então o parâmetro precisa existir mesmo sem valor: a task
-      # execution role falha ao subir o container se o parâmetro não existir.
-      aws ssm put-parameter --region "$REGION" --name "$name" \
-        --type SecureString --value "sem-chave" --overwrite >/dev/null
-      echo ">> ${name} criado vazio (modo guiado/mock)"
-    fi
-    return
-  fi
-  aws ssm put-parameter --region "$REGION" --name "$name" \
-    --type SecureString --value "$value" --overwrite >/dev/null
-  echo ">> ${name} gravado"
-}
 
 put_plain() {
   local name="$1" value="$2"
@@ -47,17 +28,23 @@ put_plain() {
   echo ">> ${name} gravado"
 }
 
-put_secure "${SSM_PREFIX}/llm/gemini_api_key" "${GEMINI_API_KEY:-}"
-put_secure "${SSM_PREFIX}/llm/groq_api_key" "${GROQ_API_KEY:-}"
+put_generated() {
+  # Gera o valor só na primeira vez: trocar o segredo de sessão desloga todo
+  # mundo, e trocar o token de admin quebra quem o usa.
+  local name="$1" bytes="$2"
+  if aws ssm get-parameter --region "$REGION" --name "$name" >/dev/null 2>&1; then
+    echo ">> ${name} já existe, preservado"
+    return
+  fi
+  aws ssm put-parameter --region "$REGION" --name "$name" \
+    --type SecureString --value "$(openssl rand -hex "$bytes")" >/dev/null
+  echo ">> ${name} gerado"
+}
 
-# Token do admin do catálogo: gerado aqui, nunca escrito no repositório.
-if ! aws ssm get-parameter --region "$REGION" --name "${SSM_PREFIX}/admin_token" >/dev/null 2>&1; then
-  aws ssm put-parameter --region "$REGION" --name "${SSM_PREFIX}/admin_token" \
-    --type SecureString --value "$(openssl rand -hex 24)" --overwrite >/dev/null
-  echo ">> ${SSM_PREFIX}/admin_token gerado"
-else
-  echo ">> ${SSM_PREFIX}/admin_token já existe, preservado"
-fi
+# Token do admin do catálogo e segredo que assina o JWT da sessão de login
+# (backend e chatbot usam o mesmo, para validar o cookie nos dois).
+put_generated "${SSM_PREFIX}/admin_token" 24
+put_generated "${SSM_PREFIX}/auth_jwt_secret" 32
 
 # Injeção de falhas: começa desligada. É alterada nas demos com um
 # `put-parameter --overwrite`, sem redeploy, e as apps releem a cada 15 s.

@@ -15,19 +15,37 @@
 # São quatro serviços com perfis deliberadamente diferentes:
 #
 #   backend-api   síncrono, escala por requisição/alvo    min 2  max 8
-#   chatbot       síncrono, latência dominada pelo LLM    min 2  max 8
+#   chatbot       síncrono, limitado por CPU              min 2  max 8
 #   order-worker  assíncrono, escala por backlog da fila  min 1  max 6
-#   frontend      estático, carga desprezível             min 2  max 4
+#   frontend      estático, carga desprezível             2 fixas
 #
 #   source scripts/ohio/00-config.sh && scripts/ohio/95-services.sh
 
 source "$(dirname "${BASH_SOURCE[0]}")/00-config.sh"
 require CLUSTER CAPACITY_PROVIDER EXECUTION_ROLE_ARN TG_BACKEND TG_CHATBOT \
         TG_FRONTEND TG_BACKEND_INTERNAL ALB_INTERNAL_DNS ORDERS_QUEUE_URL \
+        DB_HOST DB_SECRET_ARN \
         IMAGE_backend_api IMAGE_chatbot IMAGE_order_worker IMAGE_frontend
 
 LOG_PREFIX="/${PROJECT}/${ENVIRONMENT}"
 SSM_ARN="arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter${SSM_PREFIX}"
+
+# Banco: endereço em texto; usuário e senha resolvidos pelo ECS a partir do
+# segredo do RDS. DB_SECRET_ARN deixa a aplicação reler a senha depois da
+# rotação de 7 dias, sem novo deploy.
+DB_ENV="$(cat <<JSON
+    {"name": "DB_HOST", "value": "${DB_HOST}"},
+    {"name": "DB_PORT", "value": "5432"},
+    {"name": "DB_NAME", "value": "${DB_NAME}"},
+    {"name": "DB_SSLMODE", "value": "require"},
+    {"name": "DB_SECRET_ARN", "value": "${DB_SECRET_ARN}"},
+JSON
+)"
+DB_SECRETS="$(cat <<JSON
+    {"name": "DB_USER", "valueFrom": "${DB_SECRET_ARN}:username::"},
+    {"name": "DB_PASSWORD", "valueFrom": "${DB_SECRET_ARN}:password::"}
+JSON
+)"
 
 # --------------------------------------------------------------- log groups
 
@@ -89,14 +107,17 @@ TD_BACKEND="$(register "${PREFIX}-backend-api" "$BACKEND_ROLE_ARN" "$(cat <<JSON
     {"name": "AWS_REGION", "value": "${REGION}"},
     {"name": "APP_ENV", "value": "${ENVIRONMENT}"},
     {"name": "SERVICE_NAME", "value": "backend-api"},
-    {"name": "TABLE_PREFIX", "value": "${TABLE_PREFIX}"},
-    {"name": "PROVISION_ON_START", "value": "false"},
-    {"name": "FAULTS_PARAMETER", "value": "${SSM_PREFIX}/faults"},
-    {"name": "EMBEDDINGS_PROVIDER", "value": "none"}
+${DB_ENV}
+    {"name": "ORDERS_QUEUE_URL", "value": "${ORDERS_QUEUE_URL}"},
+    {"name": "MIGRATE_ON_START", "value": "true"},
+    {"name": "EMBEDDINGS_PROVIDER", "value": "bedrock"},
+    {"name": "AUTH_COOKIE_SECURE", "value": "false"},
+    {"name": "FAULTS_PARAMETER", "value": "${SSM_PREFIX}/faults"}
   ],
   "secrets": [
+${DB_SECRETS},
     {"name": "ADMIN_TOKEN", "valueFrom": "${SSM_ARN}/admin_token"},
-    {"name": "GEMINI_API_KEY", "valueFrom": "${SSM_ARN}/llm/gemini_api_key"}
+    {"name": "AUTH_JWT_SECRET", "valueFrom": "${SSM_ARN}/auth_jwt_secret"}
   ],
   "healthCheck": {
     "command": ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"],
@@ -129,11 +150,10 @@ TD_CHATBOT="$(register "${PREFIX}-chatbot" "$CHATBOT_ROLE_ARN" "$(cat <<JSON
     {"name": "TABLE_CONVERSATIONS", "value": "${TABLE_PREFIX}conversations"},
     {"name": "BACKEND_URL", "value": "http://${ALB_INTERNAL_DNS}"},
     {"name": "FAULTS_PARAMETER", "value": "${SSM_PREFIX}/faults"},
-    {"name": "LLM_PROVIDER", "value": "${LLM_PROVIDER:-mock}"}
+    {"name": "LLM_PROVIDER", "value": "bedrock"}
   ],
   "secrets": [
-    {"name": "GEMINI_API_KEY", "valueFrom": "${SSM_ARN}/llm/gemini_api_key"},
-    {"name": "GROQ_API_KEY", "valueFrom": "${SSM_ARN}/llm/groq_api_key"}
+    {"name": "AUTH_JWT_SECRET", "valueFrom": "${SSM_ARN}/auth_jwt_secret"}
   ],
   "healthCheck": {
     "command": ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"],
@@ -162,10 +182,15 @@ TD_WORKER="$(register "${PREFIX}-order-worker" "$WORKER_ROLE_ARN" "$(cat <<JSON
     {"name": "AWS_REGION", "value": "${REGION}"},
     {"name": "APP_ENV", "value": "${ENVIRONMENT}"},
     {"name": "SERVICE_NAME", "value": "order-worker"},
-    {"name": "TABLE_PREFIX", "value": "${TABLE_PREFIX}"},
+${DB_ENV}
     {"name": "ORDERS_QUEUE_URL", "value": "${ORDERS_QUEUE_URL}"},
+    {"name": "MIGRATE_ON_START", "value": "false"},
+    {"name": "EMBEDDINGS_PROVIDER", "value": "none"},
     {"name": "WORKER_THREADS", "value": "2"},
     {"name": "FAULTS_PARAMETER", "value": "${SSM_PREFIX}/faults"}
+  ],
+  "secrets": [
+${DB_SECRETS}
   ],
   "healthCheck": {
     "command": ["CMD-SHELL", "test -n \"\$(find /tmp/heartbeat -mmin -1 2>/dev/null)\" || exit 1"],

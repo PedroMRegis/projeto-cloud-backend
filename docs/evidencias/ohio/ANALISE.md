@@ -44,7 +44,7 @@ soak de 30 min, reponha com **3000 por título**, não 300.
 |---|---|
 | Reposição de estoque por task avulsa | 21 de 40 títulos repostos, exit 0 |
 | Troca de task (`backend-api`, rolling) | 2 min 40 s, `runningCount` nunca abaixo de 2 |
-| Perda de task (`order-worker`, SIGKILL) | serviço de volta a 1/1 em < 30 s, fila nunca acumulou |
+| Parada de task (`order-worker`, `stop-task`) | serviço de volta a 1/1 em < 30 s, fila nunca acumulou |
 | Invariantes do banco, depois das duas falhas | **5 de 5 OK** — 1561 pedidos, 1540 confirmados, 21 rejeitados por estoque |
 
 O `check_consistency.py` rodando **depois** de matar task sob carga é o fecho
@@ -295,11 +295,6 @@ parecerem absurdos (p95 de minutos, vazão despencando), confira o
 
 ## Pendente
 
-- **Drenagem de instância não foi ensaiada.** O comando que termina uma EC2 de
-  produção precisa de aprovação explícita; `98-resiliencia.sh drena-instancia`
-  foi dividido em duas fases (drenar, reversível; terminar, com `TERMINAR=1`)
-  mas nenhuma das duas rodou ainda. É a única das três provas de resiliência
-  ainda não verificada.
 - A cadência real do `97-observa-escala.sh` é de ~30 s, não os 15 s pedidos:
   as três chamadas de AWS CLI levam ~15 s no Windows. Para granularidade fina,
   use o CloudWatch; o CSV serve para a narrativa.
