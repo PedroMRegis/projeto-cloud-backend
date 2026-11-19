@@ -139,7 +139,7 @@ TD_CHATBOT="$(register "${PREFIX}-chatbot" "$CHATBOT_ROLE_ARN" "$(cat <<JSON
   "name": "app",
   "image": "${IMAGE_chatbot}",
   "essential": true,
-  "cpu": 256,
+  "cpu": 512,
   "memoryReservation": 256,
   "memory": 512,
   "portMappings": [{"containerPort": 8000, "hostPort": 0, "protocol": "tcp"}],

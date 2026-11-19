@@ -136,7 +136,7 @@ porque o serviço está genuinamente sem CPU (186 % de média no pico).
 
 ## Falta fazer
 
-- [ ] **decidir sobre a CPU do chatbot**: 512 unidades em vez de 256. Muda a
+- [x] (19/11: 512 no ar em Ohio, ASG até 6) **decidir sobre a CPU do chatbot**: 512 unidades em vez de 256. Muda a
       conta de capacidade (8 × 512 = 4096 contra 2048 por `t3.small`), então
       exige revisar o `ASG_MAX` junto. É decisão de arquitetura com custo.
 - [ ] gravar os vídeos — **com 10 a 12 usuários, não 30**, enquanto a CPU do

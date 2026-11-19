@@ -13,7 +13,7 @@
 #
 #   serviço        cpu   reserva  limite   tasks/instância
 #   backend-api    256   256 MiB  512 MiB
-#   chatbot        256   256 MiB  512 MiB
+#   chatbot        512   256 MiB  512 MiB
 #   order-worker   128   128 MiB  256 MiB
 #   frontend        64    64 MiB  128 MiB
 #

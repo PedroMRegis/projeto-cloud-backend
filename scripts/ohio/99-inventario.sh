@@ -11,7 +11,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/00-config.sh"
 
 OUT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/docs/recursos-ohio.md"
 
-q() { aws "$@" 2>/dev/null || echo "(indisponível)"; }
+# tr -d '\r': no Windows o aws CLI termina as linhas com CRLF.
+q() { { aws "$@" 2>/dev/null || echo "(indisponível)"; } | tr -d '\r'; }
 
 {
   echo "# Recursos criados em Ohio (us-east-2) — etapa manual"
@@ -123,7 +124,7 @@ q() { aws "$@" 2>/dev/null || echo "(indisponível)"; }
   echo '| Serviço | Tasks | cpu / reserva / limite | Escala por |'
   echo '|---|---|---|---|'
   echo '| `backend-api` | min 2, max 8 | 256 / 256 MiB / 512 MiB | requisições por alvo + CPU |'
-  echo '| `chatbot` | min 2, max 8 | 256 / 256 MiB / 512 MiB | requisições por alvo + CPU |'
+  echo '| `chatbot` | min 2, max 8 | 512 / 256 MiB / 512 MiB | requisições por alvo + CPU |'
   echo '| `order-worker` | min 1, max 6 | 128 / 128 MiB / 256 MiB | `BacklogPerTask` (metric math) |'
   echo '| `frontend` | 2 fixo | 64 / 64 MiB / 128 MiB | não escala |'
   echo
