@@ -1,0 +1,206 @@
+{
+    "metrics": {
+        "journey_completed": {
+            "passes": 19353,
+            "fails": 114,
+            "value": 0.9941439358915087
+        },
+        "orders_stuck_pending": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "data_received": {
+            "count": 78373858,
+            "rate": 43396.287559997625
+        },
+        "data_sent": {
+            "count": 32553761,
+            "rate": 18025.300904740914
+        },
+        "iteration_duration": {
+            "p(90)": 6584.364980000006,
+            "p(95)": 7476.51598,
+            "avg": 2775.5872726306093,
+            "min": 246.1276,
+            "med": 2144.6497,
+            "max": 79049.4918
+        },
+        "vus_max": {
+            "value": 30,
+            "min": 30,
+            "max": 30
+        },
+        "quotes_created": {
+            "count": 4183,
+            "rate": 2.3161635205385713
+        },
+        "chat_turn_duration": {
+            "med": 361.71955,
+            "max": 60027.4325,
+            "p(90)": 574.01124,
+            "p(95)": 802.1182249999996,
+            "avg": 525.120586820729,
+            "min": 0
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 471.3763389843511,
+            "min": 143.6418,
+            "med": 355.68745,
+            "max": 58963.1442,
+            "p(90)": 559.4217,
+            "p(95)": 769.45795,
+            "thresholds": {
+                "p(95)<5000": false
+            }
+        },
+        "http_req_waiting": {
+            "avg": 504.0232831439223,
+            "min": 0,
+            "med": 355.00265,
+            "max": 60027.4325,
+            "p(90)": 559.0210999999999,
+            "p(95)": 771.7464999999999
+        },
+        "http_req_connecting": {
+            "med": 0,
+            "max": 478.0729,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0.22325754423908772,
+            "min": 0
+        },
+        "vus": {
+            "max": 30,
+            "value": 1,
+            "min": 0
+        },
+        "order_settle_duration": {
+            "max": 25044,
+            "p(90)": 1731,
+            "p(95)": 1752,
+            "avg": 1856.305289314874,
+            "min": 1649,
+            "med": 1702
+        },
+        "http_req_failed": {
+            "passes": 114,
+            "fails": 50746,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0.0022414471097129377
+        },
+        "iterations": {
+            "rate": 10.779047395248474,
+            "count": 19467
+        },
+        "degraded_replies": {
+            "rate": 0.003875960947590246,
+            "count": 7
+        },
+        "login_required_unexpected": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count==0": false
+            }
+        },
+        "checks": {
+            "passes": 50475,
+            "fails": 114,
+            "thresholds": {
+                "rate>0.98": false
+            },
+            "value": 0.9977465456917511
+        },
+        "http_req_sending": {
+            "avg": 0.12233081006685072,
+            "min": 0,
+            "med": 0,
+            "max": 106.2231,
+            "p(90)": 0,
+            "p(95)": 0.6507149999999986
+        },
+        "orders_settled": {
+            "count": 2817,
+            "rate": 1.5597974270516748
+        },
+        "http_req_blocked": {
+            "med": 0,
+            "max": 7773.8776,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 2.731119815178919,
+            "min": 0
+        },
+        "orders_created": {
+            "count": 2817,
+            "rate": 1.5597974270516748
+        },
+        "http_reqs": {
+            "count": 50860,
+            "rate": 28.16162482777713
+        },
+        "http_req_receiving": {
+            "max": 3266.6182,
+            "p(90)": 1.0327,
+            "p(95)": 1.5372,
+            "avg": 0.7315437082186375,
+            "min": 0,
+            "med": 0
+        },
+        "out_of_stock": {
+            "count": 16531,
+            "rate": 9.153358632087766
+        },
+        "http_req_duration": {
+            "avg": 504.8771576622057,
+            "min": 0,
+            "med": 355.5723,
+            "max": 60027.4325,
+            "p(90)": 560.4006299999994,
+            "p(95)": 772.4373799999956
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0
+        }
+    },
+    "setup_data": {
+        "cookies": [
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJiZjAyYzFjNi1mMWNiLTRhYzUtODA4My00YTU3ZmRiMDAzZGEiLCJpc3MiOiJjaXJyby1iYWNrZW5kIiwiYXVkIjoiY2lycm8td2ViIiwiaWF0IjoxNzk0OTI3Nzc5LCJleHAiOjE3OTQ5NzA5Nzl9.FtIO-lRh6jjcKkIW8V3PNO3nOajfZhbZbgT9DJX0JFA",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjNjdjMWM5ZC1jNjA0LTQxMjEtOTBhZi01ZTM2NDFhOWJiYmUiLCJpc3MiOiJjaXJyby1iYWNrZW5kIiwiYXVkIjoiY2lycm8td2ViIiwiaWF0IjoxNzk0OTI3Nzc5LCJleHAiOjE3OTQ5NzA5Nzl9.ebXto3Wp4uZhMYKEOlM0A0zGQ9sLLkQ8yjnIOPSMBBI",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI0NDZlNWQ0Mi04N2EwLTQ0MjctOTBmYy0zMTZmOTlmN2IyZjIiLCJpc3MiOiJjaXJyby1iYWNrZW5kIiwiYXVkIjoiY2lycm8td2ViIiwiaWF0IjoxNzk0OTI3NzgwLCJleHAiOjE3OTQ5NzA5ODB9.KVw5j2GHkAQauKQ2AE6pr1IO4mALt0vFNYc0ara3CMA",
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmOWVmMmZhMC00MTJmLTRjNDAtOTRkMC1hN2Q1NmFjZGNmYTEiLCJpc3MiOiJjaXJyby1iYWNrZW5kIiwiYXVkIjoiY2lycm8td2ViIiwiaWF0IjoxNzk0OTI3NzgwLCJleHAiOjE3OTQ5NzA5ODB9.9y0dpAY2u0H3AVD7KWnSMZ64_9i-B9gb1LSvz5NXBpc"
+        ]
+    },
+    "root_group": {
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+            "chat respondeu 200": {
+                "id": "2d5588602a964c3bb84328a13ec8616f",
+                "passes": 47658,
+                "fails": 114,
+                "name": "chat respondeu 200",
+                "path": "::chat respondeu 200"
+            },
+            "pedido saiu de PENDING": {
+                "id": "d10646bccf54d54e21f4c47f888bf5ad",
+                "passes": 2817,
+                "fails": 0,
+                "name": "pedido saiu de PENDING",
+                "path": "::pedido saiu de PENDING"
+            }
+        },
+        "name": "",
+        "path": ""
+    }
+}

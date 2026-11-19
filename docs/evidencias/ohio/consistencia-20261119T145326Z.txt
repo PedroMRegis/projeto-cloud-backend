@@ -1,0 +1,6 @@
+   pedidos: {'orders': 5586, 'confirmed': 5551, 'rejected': 35}
+   OK      estoque = Σ movimentos
+   OK      pedido CONFIRMED debitou cada item uma vez
+   OK      pedido não confirmado não debitou estoque
+   OK      nenhum pedido PENDING há mais de 10 min
+   OK      outbox sem evento parado há mais de 5 min
