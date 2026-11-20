@@ -1,10 +1,8 @@
 # `scripts/ohio` — operação da etapa manual em Ohio
 
 Scripts de AWS CLI que criaram e operam a infraestrutura de `us-east-2`.
-Vieram do repositório `joselsm3/projeto-cloud-insper`, que o grupo deixou de
-usar em outubro; moraram lá até 19/11/2026.
 
-Eles estão **aqui**, e não nos outros dois repositórios, porque dependem deste:
+Eles estão **aqui**, e não no chatbot ou no frontend, porque dependem deste:
 `99-consistencia.sh` executa `scripts/check_consistency.py`, e
 `repor-estoque.sh` importa `app.application.admin`. Manter os dois lados no
 mesmo repositório evita que uma mudança no `app/` quebre a operação sem
