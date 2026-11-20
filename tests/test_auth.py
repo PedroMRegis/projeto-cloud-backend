@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import jwt
 import pytest
@@ -190,6 +191,37 @@ def test_pedido_de_conta_nao_abre_para_outra_pessoa(api: Any, sql: Any) -> None:
     assert api.get(f"/api/orders/{order_id}").status_code == 404
     api.cookies.clear()
     assert api.get(f"/api/orders/{order_id}").status_code == 404
+
+
+def _short(order_id: str) -> str:
+    """O número que a loja mostra: o primeiro bloco do UUID, em maiúsculas."""
+    return order_id.split("-")[0].upper()
+
+
+def test_dono_consulta_pelo_numero_curto_de_outra_conversa(api: Any, sql: Any) -> None:
+    _new_session(api, sql, "ana@cirro.test")
+    order_id = _buy(api, "conversa-ana")
+
+    for ref in (_short(order_id), f"#{_short(order_id)}", f"nº {_short(order_id)}"):
+        response = api.get(f"/api/orders/{quote(ref, safe='')}",
+                           params={"conversation_id": "outra-conversa"})
+        assert response.status_code == 200, (ref, response.text)
+        assert response.json()["order_id"] == order_id
+
+    # O UUID inteiro também vale de outra conversa para o dono.
+    assert api.get(f"/api/orders/{order_id}",
+                   params={"conversation_id": "outra-conversa"}).status_code == 200
+
+
+def test_numero_curto_nao_abre_pedido_de_outra_pessoa(api: Any, sql: Any) -> None:
+    _new_session(api, sql, "ana@cirro.test")
+    order_id = _buy(api, "conversa-ana")
+
+    _new_session(api, sql, "bia@cirro.test")
+    assert api.get(f"/api/orders/{_short(order_id)}").status_code == 404
+    api.cookies.clear()
+    # Sem conta, o número curto não prova posse: pede login.
+    assert api.get(f"/api/orders/{_short(order_id)}").status_code == 401
 
 
 def test_nome_do_pedido_vem_da_conta_e_nao_do_cliente(api: Any, sql: Any) -> None:

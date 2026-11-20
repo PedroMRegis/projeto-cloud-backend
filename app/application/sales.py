@@ -15,6 +15,7 @@ Fluxo do pedido (ADR 0002):
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -282,18 +283,59 @@ def publish_now(outbox_id: int, order_id: str, corr: str | None, trace: str | No
     return True
 
 
+# O número que a loja mostra ao cliente ("nº 8F3A2C1D") é o primeiro bloco do UUID.
+SHORT_ORDER_ID = re.compile(r"[0-9a-f]{8}")
+
+
+def _order_ref(value: str) -> str:
+    """O pedido como o cliente escreveu: "#8F3A2C1D", "nº 8f3a2c1d" ou o UUID inteiro."""
+    ref = str(value).strip().lower()
+    return re.sub(r"^(#|n[º°o.]\s*)", "", ref).strip()
+
+
+def _resolve_short_id(ref: str, viewer: AuthUser | None) -> str | None:
+    """Número curto → UUID, procurando só entre os pedidos de quem pergunta.
+
+    Sem login não há como saber de quem é o pedido, e 8 caracteres não bastam
+    para provar posse, então a consulta pelo número curto exige a conta.
+    """
+    if viewer is None:
+        raise BusinessError("entre na sua conta para consultar o pedido pelo número", status=401)
+    with db.transaction() as conn:
+        ids = _orders.find_ids_by_prefix(
+            conn, ref, user_id=None if viewer.is_admin else viewer.user_id
+        )
+    if len(ids) > 1:
+        raise BusinessError(
+            "mais de um pedido começa com esse número; envie o número completo", status=409
+        )
+    return ids[0] if ids else None
+
+
 def get_order(
     order_id: str, conversation_id: str | None = None, viewer: AuthUser | None = None
 ) -> dict[str, Any] | None:
-    order_id = _valid_uuid(order_id, "order_id")
+    ref = _order_ref(order_id)
+    if SHORT_ORDER_ID.fullmatch(ref):
+        resolved = _resolve_short_id(ref, viewer)
+        if resolved is None:
+            return None
+        order_id = resolved
+    else:
+        order_id = _valid_uuid(ref, "order_id")
     with db.transaction() as conn:
         order = _orders.get(conn, order_id)
     if not order:
         return None
     owner = order.get("user_id")
-    if owner and not (viewer and (viewer.is_admin or viewer.user_id == owner)):
-        # Pedido de uma conta: para os outros, é como se não existisse.
-        return None
+    if owner:
+        if not (viewer and (viewer.is_admin or viewer.user_id == owner)):
+            # Pedido de uma conta: para os outros, é como se não existisse.
+            return None
+        # O dono consulta o próprio pedido de qualquer conversa: ele volta outro
+        # dia, numa conversa nova, e pergunta pelo número.
+        return present_order(order)
+    # Pedido sem conta: a conversa em que nasceu é a única prova de posse.
     if conversation_id and order["conversation_id"] != conversation_id:
         raise BusinessError("pedido não pertence a esta conversa", status=403)
     return present_order(order)
