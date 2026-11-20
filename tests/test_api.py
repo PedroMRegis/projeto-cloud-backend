@@ -58,7 +58,8 @@ def test_jornada_cotacao_pedido(api: Any) -> None:
     order = api.get(f"/api/orders/{quote_id}", params={"conversation_id": "c1"}).json()
     assert order["status"] == "PENDING"
     assert order["discount_pct"] == 5
-    assert api.get(f"/api/orders/{quote_id}", params={"conversation_id": "x"}).status_code == 403
+    # A dona do pedido consulta de qualquer conversa (volta outro dia e pergunta).
+    assert api.get(f"/api/orders/{quote_id}", params={"conversation_id": "x"}).status_code == 200
 
 
 def test_preco_enviado_pelo_cliente_e_ignorado(api: Any) -> None:

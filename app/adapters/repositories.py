@@ -416,6 +416,22 @@ class OrderRepository:
         self.add_history(conn, quote["quote_id"], OrderStatus.PENDING, actor="backend-api")
         return True
 
+    def find_ids_by_prefix(
+        self, conn: Conn, prefix: str, *, user_id: str | None, limit: int = 2
+    ) -> list[str]:
+        """Pedidos cujo UUID começa com `prefix`; `user_id` None = todas as contas.
+
+        Devolve no máximo `limit` ids: dois já bastam para saber que é ambíguo.
+        """
+        rows = conn.execute(
+            "SELECT order_id::text AS order_id FROM orders "
+            "WHERE order_id::text LIKE %(prefix)s "
+            "AND (%(user_id)s::uuid IS NULL OR user_id = %(user_id)s::uuid) "
+            "ORDER BY created_at DESC LIMIT %(limit)s",
+            {"prefix": f"{prefix}%", "user_id": user_id, "limit": limit},
+        ).fetchall()
+        return [row["order_id"] for row in rows]
+
     def get(self, conn: Conn, order_id: str, *, for_update: bool = False) -> dict[str, Any] | None:
         lock = " FOR UPDATE" if for_update else ""
         row = conn.execute(
